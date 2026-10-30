@@ -22,7 +22,23 @@
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const safeUrl = (u) => (/^(https?:|data:|blob:)/i.test(String(u || "")) ? u : "#");
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
-  const badge = (status) => `<span class="badge s-${esc(status)}">${esc(STATUS[status] || status)}</span>`;
+  const badge = (status, pill = false) => `<span class="status st-${esc(status)}${pill ? " pill" : ""}"><i></i>${esc(STATUS[status] || status)}</span>`;
+  const svg = (d, extra = "") => `<svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${d}</svg>`;
+  const ICON = {
+    check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 'stroke-width="2.6"'),
+    search: svg('<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>'),
+    chat: svg('<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>'),
+    plus: svg('<path d="M12 5v14M5 12h14"/>', 'stroke-width="2.4"'),
+    upload: svg('<path d="M12 16V4M7 9l5-5 5 5M5 20h14"/>'),
+    back: svg('<path d="M15 18l-6-6 6-6"/>', 'stroke-width="2.4"'),
+    external: svg('<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>'),
+    compare: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/>'),
+    doc: svg('<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>', 'stroke-width="1.5"'),
+    link: svg('<path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>', 'stroke-width="1.5"'),
+    eye: svg('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+    clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+    pencil: svg('<path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'),
+  };
 
   function timeAgo(iso) {
     const s = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
@@ -267,24 +283,24 @@
   };
 
   // ---------- media rendering -----------------------------------------
+  const ph = (icon, label) => `<div class="ph">${icon}<span>${esc(label)}</span></div>`;
   function thumbHtml(v) {
-    if (!v) return `<div class="icon"><b>?</b>NO FILE</div>`;
+    if (!v) return ph(ICON.doc, "NO FILE");
     const url = safeUrl(v.url);
     if (v.media_type === "image") return `<img loading="lazy" src="${esc(url)}" alt="">`;
     if (v.media_type === "video") return `<video src="${esc(url)}#t=0.5" preload="metadata" muted playsinline></video>`;
     const yt = youtubeId(v.url);
     if (yt) return `<img loading="lazy" src="https://img.youtube.com/vi/${esc(yt)}/hqdefault.jpg" alt="">`;
     const dr = driveId(v.url);
-    if (dr) return `<img loading="lazy" src="https://drive.google.com/thumbnail?id=${esc(dr)}&sz=w600" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'icon',innerHTML:'<b>↗</b>DRIVE LINK'}))">`;
-    if (v.media_type === "pdf") return `<div class="icon"><b>📄</b>PDF</div>`;
-    if (v.media_type === "link") return `<div class="icon"><b>↗</b>LINK</div>`;
-    return `<div class="icon"><b>📎</b>${esc((v.file_name || "FILE").split(".").pop().toUpperCase())}</div>`;
+    if (dr) return `<img loading="lazy" src="https://drive.google.com/thumbnail?id=${esc(dr)}&sz=w600" alt="" onerror="this.outerHTML='<div class=&quot;ph&quot;><span>DRIVE</span></div>'">`;
+    if (v.media_type === "pdf") return ph(ICON.doc, "PDF");
+    if (v.media_type === "link") return ph(ICON.link, "LINK");
+    return ph(ICON.doc, (v.file_name || "FILE").split(".").pop().toUpperCase());
   }
 
   function viewerHtml(v) {
-    if (!v) return `<div class="fallback">No file for this version.</div>`;
+    if (!v) return `<div class="fallback">${ICON.doc}<p>No file for this version.</p></div>`;
     const url = safeUrl(v.url);
-    const open = `<a href="${esc(url)}" target="_blank" rel="noopener">Open in new tab ↗</a>`;
     if (v.media_type === "image") return `<img src="${esc(url)}" alt="" data-zoom>`;
     if (v.media_type === "video") return `<video src="${esc(url)}" controls playsinline preload="metadata"></video>`;
     if (v.media_type === "pdf" && !driveId(v.url)) return `<iframe src="${esc(url)}" title="PDF preview"></iframe>`;
@@ -292,12 +308,13 @@
     if (yt) return `<iframe src="https://www.youtube.com/embed/${esc(yt)}" allowfullscreen title="Video"></iframe>`;
     const dr = driveId(v.url);
     if (dr) return `<iframe src="https://drive.google.com/file/d/${esc(dr)}/preview" allowfullscreen title="Drive preview"></iframe>`;
-    return `<div class="fallback"><p>This item can't be previewed here.</p><p>${open}</p></div>`;
+    return `<div class="fallback">${ICON.link}<p>This item can't be previewed here.</p><a class="btn btn-sm" href="${esc(url)}" target="_blank" rel="noopener">Open link ${ICON.external}</a></div>`;
   }
 
   // ---------- gallery --------------------------------------------------
   async function renderGallery() {
     state.detail = null;
+    if (!$("#app .hero")) $("#app").innerHTML = skeletonHtml();
     const [projects, assets] = await Promise.all([api.listProjects(), api.listAssets()]);
     state.projects = projects;
     const f = state.filters;
@@ -313,45 +330,70 @@
 
     const groups = [];
     const byProject = new Map();
-    shown.forEach((a) => { const k = a.project_id || "none"; if (!byProject.has(k)) byProject.set(k, []); byProject.get(k).push(a); });
+    shown.forEach((a) => {
+      const k = a.project_id && projects.some((p) => p.id === a.project_id) ? a.project_id : "none";
+      if (!byProject.has(k)) byProject.set(k, []);
+      byProject.get(k).push(a);
+    });
     projects.forEach((p) => byProject.has(p.id) && groups.push({ name: p.name, items: byProject.get(p.id) }));
     if (byProject.has("none")) groups.push({ name: "Unsorted", items: byProject.get("none") });
-    // project ids that no longer exist
-    byProject.forEach((items, k) => { if (k !== "none" && !projects.some((p) => p.id === k)) groups.push({ name: "Unsorted", items }); });
 
-    const card = (a) => `
-      <a class="card ${a.status === "approved" ? "is-approved" : ""}" href="#/asset/${esc(a.id)}">
-        <div class="thumb">${thumbHtml(a.current)}<span class="vtag">v${a.current_version}</span></div>
+    const awaiting = f.status === "all" ? inScope.filter((a) => a.status === "ready_for_approval") : [];
+    const projectName = (id) => (projects.find((p) => p.id === id) || {}).name || "Unsorted";
+
+    const card = (a, showProject = false) => `
+      <a class="card" href="#/asset/${esc(a.id)}">
+        <div class="thumb">${thumbHtml(a.current)}<span class="vtag">v${a.current_version}</span>${a.status === "approved" ? `<span class="check">${ICON.check}</span>` : ""}</div>
         <div class="card-body">
+          ${showProject ? `<div class="card-eyebrow">${esc(projectName(a.project_id))}</div>` : ""}
           <div class="card-title" title="${esc(a.title)}">${esc(a.title)}</div>
-          <div class="card-meta">${badge(a.status)}<span>💬 ${a.comment_count} · ${esc(timeAgo(a.updated_at))}</span></div>
+          <div class="card-meta">${badge(a.status)}<span class="meta-r">${ICON.chat} ${a.comment_count} · ${esc(timeAgo(a.updated_at))}</span></div>
         </div>
       </a>`;
 
+    const title = cfg.SITE_TITLE || "Media Review";
     $("#app").innerHTML = `
+      <section class="hero">
+        <h1>${esc(title)}</h1>
+        <p>Review. Comment. Approve.</p>
+      </section>
+      ${awaiting.length ? `
+        <section class="shelf">
+          <div class="shelf-head"><span class="dot"></span><h2>Awaiting approval</h2><span class="count">${awaiting.length}</span></div>
+          <div class="shelf-row">${awaiting.map((a) => card(a, true)).join("")}</div>
+        </section>` : ""}
       <div class="toolbar">
-        <input type="search" id="f-q" placeholder="Search titles…" value="${esc(f.q)}">
-        <select id="f-project">
+        <label class="search">${ICON.search}<input type="search" id="f-q" placeholder="Search" value="${esc(f.q)}" aria-label="Search titles"></label>
+        <select id="f-project" aria-label="Project">
           <option value="all">All projects</option>
           ${projects.map((p) => `<option value="${esc(p.id)}" ${f.project === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
           <option value="none" ${f.project === "none" ? "selected" : ""}>Unsorted</option>
         </select>
-        <div class="chips">
-          <button class="chip ${f.status === "all" ? "active" : ""}" data-status="all">All<span class="n">${counts.all}</span></button>
-          ${STATUS_ORDER.map((s) => `<button class="chip ${f.status === s ? "active" : ""}" data-status="${s}">${STATUS[s]}<span class="n">${counts[s]}</span></button>`).join("")}
+        <div class="segmented" role="tablist">
+          <button class="${f.status === "all" ? "active" : ""}" data-status="all">All<span class="n">${counts.all}</span></button>
+          ${STATUS_ORDER.map((s) => `<button class="${f.status === s ? "active" : ""}" data-status="${s}">${STATUS[s]}<span class="n">${counts[s]}</span></button>`).join("")}
         </div>
       </div>
       ${groups.length ? groups.map((g) => `
         <section class="group">
-          <h2>${esc(g.name)} <span class="muted">${g.items.length}</span></h2>
-          <div class="grid">${g.items.map(card).join("")}</div>
+          <div class="group-head"><h2>${esc(g.name)}</h2><span class="count">${g.items.length}</span></div>
+          <div class="grid">${g.items.map((a) => card(a)).join("")}</div>
         </section>`).join("")
-      : `<div class="empty">${assets.length ? "Nothing matches these filters." : "No assets yet. Click <b>+ New asset</b> to upload the first one."}</div>`}`;
+      : assets.length
+        ? `<div class="empty"><h3>No matches</h3>Try a different search or filter.</div>`
+        : `<div class="empty"><h3>Nothing to review yet</h3><p>Upload the first asset to get started.</p><button class="btn btn-primary" id="empty-new">${ICON.plus} New asset</button></div>`}`;
 
     const qEl = $("#f-q");
     qEl.addEventListener("input", debounce(() => { f.q = qEl.value; renderGallery().then(() => { const el = $("#f-q"); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }); }, 250));
     $("#f-project").addEventListener("change", (e) => { f.project = e.target.value; renderGallery(); });
-    $$(".chip").forEach((b) => b.addEventListener("click", () => { f.status = b.dataset.status; renderGallery(); }));
+    $$(".segmented [data-status]").forEach((b) => b.addEventListener("click", () => { f.status = b.dataset.status; renderGallery(); }));
+    const en = $("#empty-new"); if (en) en.addEventListener("click", () => openNewAssetModal());
+  }
+
+  function skeletonHtml() {
+    const c = `<div class="skel-card"><div class="skel skel-thumb"></div><div class="skel skel-line"></div><div class="skel skel-line short"></div></div>`;
+    return `<section class="hero"><div class="skel" style="height:52px;width:320px;border-radius:12px"></div><div class="skel" style="height:22px;width:220px;margin-top:14px"></div></section>
+      <div class="grid" style="margin-top:36px">${c.repeat(6)}</div>`;
   }
 
   function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
@@ -366,101 +408,136 @@
       ...data,
       selected: keepSelection && prev ? Math.min(prev.selected, data.asset.current_version) : data.asset.current_version,
       commentScope: prev ? prev.commentScope : "all",
+      compare: prev && keepSelection ? prev.compare : false,
+      cmpA: prev ? prev.cmpA : null,
     };
-    drawDetail();
+    drawDetail(!prev);
   }
 
-  function drawDetail() {
+  function drawDetail(animate = false) {
     const d = state.detail; const a = d.asset;
     const project = state.projects.find((p) => p.id === a.project_id);
-    const v = d.versions.find((x) => x.version_number === d.selected) || d.versions[d.versions.length - 1];
+    const byNum = (n) => d.versions.find((x) => x.version_number === n);
+    const v = byNum(d.selected) || d.versions[d.versions.length - 1];
     const isCurrent = v && v.version_number === a.current_version;
     const approver = store.approver;
-
-    const comments = d.comments.filter((c) => d.commentScope === "all" || c.version_number === d.selected);
-    const commentHtml = comments.length ? comments.map((c) => `
-      <div class="comment ${c.kind === "event" ? "event" : ""}">
-        <div class="who">
-          <span><b>${esc(c.author)}</b>${c.version_number ? `<span class="vchip">v${c.version_number}</span>` : ""}</span>
-          <span title="${esc(fullDate(c.created_at))}">${esc(timeAgo(c.created_at))}${approver && c.kind === "comment" ? `<button class="del" data-del-comment="${esc(c.id)}" title="Delete comment">✕</button>` : ""}</span>
-        </div>
-        <div class="body">${esc(c.body)}</div>
-      </div>`).join("") : `<p class="muted small">No comments ${d.commentScope === "all" ? "yet" : "on v" + d.selected}.</p>`;
-
-    let statusPanel;
-    if (a.status === "approved") {
-      statusPanel = `<div class="approved-box">✅ v${a.approved_version} approved by ${esc(a.approved_by)}<br><span class="small" style="font-weight:400">${esc(fullDate(a.approved_at))}</span></div>`;
-    } else {
-      statusPanel = `<p class="small muted" style="margin:0">Current status: ${badge(a.status)}</p>`;
+    const canCompare = d.versions.length > 1;
+    if (!canCompare) d.compare = false;
+    if (d.compare) {
+      if (!byNum(d.cmpA) || d.cmpA === d.selected) {
+        d.cmpA = d.selected > 1 ? d.selected - 1 : d.versions.find((x) => x.version_number !== d.selected).version_number;
+      }
     }
+
+    // ----- stage
+    let stage;
+    if (d.compare) stage = compareHtml(byNum(d.cmpA), v);
+    else stage = viewerHtml(v);
+    const framed = !d.compare && v && (v.media_type === "pdf" || youtubeId(v.url) || driveId(v.url));
+
+    // ----- comments
+    const comments = d.comments.filter((c) => d.commentScope === "all" || c.version_number === d.selected);
+    const commentHtml = comments.length ? comments.map((c) => c.kind === "event"
+      ? `<div class="event ${/^✅/.test(c.body) ? "approved" : ""}"><span><b>${esc(c.author)}</b> · ${esc(c.body)} · ${esc(timeAgo(c.created_at))}</span></div>`
+      : `<div class="msg">
+          ${avatar(c.author)}
+          <div class="msg-main">
+            <div class="msg-head"><b>${esc(c.author)}</b>${c.version_number ? `<span class="vchip">v${c.version_number}</span>` : ""}<time title="${esc(fullDate(c.created_at))}">${esc(timeAgo(c.created_at))}</time>${approver ? `<button class="del" data-del-comment="${esc(c.id)}" title="Delete comment" aria-label="Delete comment">✕</button>` : ""}</div>
+            <div class="msg-body">${esc(c.body)}</div>
+          </div>
+        </div>`).join("")
+      : `<p class="muted small center" style="margin:18px 0">No comments ${d.commentScope === "all" ? "yet" : "on v" + d.selected}.</p>`;
+
+    // ----- status panel
+    const statusCopy = {
+      in_review: ["In review", "Waiting on feedback."],
+      ready_for_approval: ["Ready for approval", `v${a.current_version} is waiting for an approver.`],
+      changes_requested: ["Changes requested", `Upload v${a.current_version + 1} when it's ready.`],
+      approved: ["Approved", `v${a.approved_version} by ${a.approved_by || "—"} · ${a.approved_at ? fullDate(a.approved_at) : ""}`],
+    }[a.status] || [STATUS[a.status], ""];
+    const statusIcon = { in_review: ICON.eye, ready_for_approval: ICON.clock, changes_requested: ICON.pencil, approved: ICON.check }[a.status] || "";
     const approverBtns = a.status === "approved"
       ? `<button class="btn" data-act="in_review">Reopen for review</button>`
-      : `<button class="btn btn-approve" data-act="approved">✓ Approve v${a.current_version}</button>
+      : `<button class="btn btn-approve btn-lg" data-act="approved">${ICON.check} Approve v${a.current_version}</button>
          <button class="btn btn-changes" data-act="changes_requested">Request changes</button>`;
 
     $("#app").innerHTML = `
-      <div class="crumbs"><a href="#/">Gallery</a> / ${esc(project ? project.name : "Unsorted")}</div>
-      <div class="detail-head">
-        <div>
-          <h1>${esc(a.title)} ${badge(a.status)}</h1>
-          ${a.description ? `<p>${esc(a.description)}</p>` : ""}
-          <div class="small muted" style="margin-top:4px">Created by ${esc(a.created_by)} · ${esc(fullDate(a.created_at))}</div>
-        </div>
-      </div>
+      <div class="${animate ? "fade-in" : ""}">
+      <div class="crumbs"><a href="#/">${ICON.back} Gallery</a></div>
+      <header class="detail-head">
+        <p class="eyebrow">${esc(project ? project.name : "Unsorted")}</p>
+        <h1>${esc(a.title)}</h1>
+        <div class="sub">${badge(a.status, true)}<span>Created by ${esc(a.created_by)} · ${esc(fullDate(a.created_at))}</span></div>
+        ${a.description ? `<p class="desc">${esc(a.description)}</p>` : ""}
+      </header>
       <div class="detail-layout">
-        <div class="panel">
-          <div class="viewer">${viewerHtml(v)}</div>
-          <div class="vbar">
-            <span class="small muted">Versions:</span>
-            ${d.versions.map((x) => `<button class="vtab ${x.version_number === d.selected ? "active" : ""}" data-v="${x.version_number}">v${x.version_number}${x.version_number === a.approved_version && a.status === "approved" ? ' <span class="tick">✓</span>' : ""}${x.version_number === a.current_version ? " · latest" : ""}</button>`).join("")}
+        <div class="panel stage">
+          <div class="viewer ${framed ? "has-frame" : ""}">${stage}</div>
+          <div class="filmstrip" role="tablist" aria-label="Versions">
+            ${d.versions.map((x) => `
+              <button class="frame ${x.version_number === d.selected ? "active" : ""} ${d.compare && x.version_number === d.cmpA ? "cmp-a" : ""}" data-v="${x.version_number}" title="v${x.version_number} · ${esc(x.uploaded_by)}">
+                <div class="fthumb">${thumbHtml(x)}</div>
+                v${x.version_number}${x.version_number === a.approved_version && a.status === "approved" ? ' <span class="tick">✓</span>' : ""}${x.version_number === a.current_version ? " · Latest" : ""}
+              </button>`).join("")}
           </div>
           ${v ? `<div class="vinfo">
-            <div class="row" style="justify-content:space-between">
-              <span><b>v${v.version_number}</b> uploaded by ${esc(v.uploaded_by)} · ${esc(fullDate(v.created_at))}${isCurrent ? "" : ' · <span class="muted">older version</span>'}</span>
-              <a href="${esc(safeUrl(v.url))}" target="_blank" rel="noopener" ${v.file_name ? `download="${esc(v.file_name)}"` : ""}>Open original ↗</a>
+            <div class="line">
+              <span>${d.compare ? `Comparing <b>v${d.cmpA}</b> with <b>v${v.version_number}</b>` : `<b>v${v.version_number}</b> · ${esc(v.uploaded_by)} · ${esc(fullDate(v.created_at))}${isCurrent ? "" : " · Older version"}`}</span>
+              <span class="tools">
+                ${d.compare ? `<select id="cmp-a" aria-label="Compare with">${d.versions.filter((x) => x.version_number !== d.selected).map((x) => `<option value="${x.version_number}" ${x.version_number === d.cmpA ? "selected" : ""}>v${x.version_number}</option>`).join("")}</select>` : ""}
+                ${canCompare ? `<button class="btn btn-sm" id="cmp-toggle">${ICON.compare} ${d.compare ? "Done" : "Compare"}</button>` : ""}
+                ${d.compare ? "" : `<a class="btn btn-sm" href="${esc(safeUrl(v.url))}" target="_blank" rel="noopener" ${v.file_name ? `download="${esc(v.file_name)}"` : ""}>Open ${ICON.external}</a>`}
+              </span>
             </div>
-            ${v.notes ? `<div class="notes"><span class="muted">Notes:</span> ${esc(v.notes)}</div>` : ""}
+            ${!d.compare && v.notes ? `<div class="notes">${esc(v.notes)}</div>` : ""}
           </div>` : ""}
         </div>
-        <div class="side">
+        <aside class="side">
           <div class="panel">
             <h3>Status</h3>
-            ${statusPanel}
-            <div class="actions" style="margin-top:12px">
-              <button class="btn btn-primary" id="new-version-btn">⬆ Upload revised version</button>
-              ${approver ? approverBtns : `<button class="btn" id="approver-login">Approver? Sign in to approve</button>`}
-              ${approver ? `<button class="btn-link small btn-danger" id="delete-asset" style="align-self:flex-start;margin-top:4px">Delete this asset</button>` : ""}
+            <div class="status-big"><span class="ring st-${esc(a.status)}">${statusIcon}</span><div><div class="t st-${esc(a.status)}">${esc(statusCopy[0])}</div><div class="s">${esc(statusCopy[1])}</div></div></div>
+            <div class="actions">
+              <button class="btn btn-primary" id="new-version-btn">${ICON.upload} Upload revised version</button>
+              ${approver ? approverBtns : `<button class="btn" id="approver-login">Sign in to approve</button>`}
+              ${approver ? `<button class="btn-link small btn-danger" id="delete-asset" style="align-self:center;margin-top:2px">Delete asset</button>` : ""}
             </div>
           </div>
           <div class="panel">
             <div class="comments-head">
-              <h3 style="margin:0">Comments</h3>
-              <div class="seg small">
-                <label><input type="radio" name="scope" value="all" ${d.commentScope === "all" ? "checked" : ""}>All versions</label>
-                <label><input type="radio" name="scope" value="this" ${d.commentScope === "this" ? "checked" : ""}>v${d.selected} only</label>
+              <h3>Comments</h3>
+              <div class="seg">
+                <label><input type="radio" name="scope" value="all" ${d.commentScope === "all" ? "checked" : ""}>All</label>
+                <label><input type="radio" name="scope" value="this" ${d.commentScope === "this" ? "checked" : ""}>v${d.selected}</label>
               </div>
             </div>
             <div class="comment-list" id="comment-list">${commentHtml}</div>
-            <form id="comment-form">
-              <label class="field"><span>Your name</span><input type="text" name="name" maxlength="80" required value="${esc(store.name)}"></label>
-              <label class="field"><span>Comment on v${d.selected}</span><textarea name="body" maxlength="5000" required placeholder="Feedback, questions, change requests…"></textarea></label>
-              <button class="btn btn-primary" type="submit">Post comment</button>
+            <form id="comment-form" class="compose">
+              <label class="name-row">${avatar(store.name || "?")}<input type="text" name="name" maxlength="80" required placeholder="Your name" value="${esc(store.name)}" aria-label="Your name"></label>
+              <textarea name="body" maxlength="5000" required placeholder="Add a comment on v${d.selected}…" aria-label="Comment"></textarea>
+              <button class="btn btn-primary btn-sm send" type="submit">Post</button>
             </form>
           </div>
-        </div>
+        </aside>
+      </div>
       </div>`;
 
     const list = $("#comment-list"); list.scrollTop = list.scrollHeight;
 
-    $$(".vtab").forEach((b) => b.addEventListener("click", () => { d.selected = +b.dataset.v; drawDetail(); }));
+    $$(".frame").forEach((b) => b.addEventListener("click", () => { d.selected = +b.dataset.v; drawDetail(); }));
     $$('input[name="scope"]').forEach((r) => r.addEventListener("change", () => { d.commentScope = r.value; drawDetail(); }));
-    const img = $(".viewer img[data-zoom]");
+    const img = $(".viewer > img[data-zoom]");
     if (img) img.addEventListener("click", () => openLightbox(img.src));
+    const tg = $("#cmp-toggle"); if (tg) tg.addEventListener("click", () => { d.compare = !d.compare; drawDetail(); });
+    const ca = $("#cmp-a"); if (ca) ca.addEventListener("change", () => { d.cmpA = +ca.value; drawDetail(); });
+    const range = $(".cmp input[type=range]");
+    if (range) range.addEventListener("input", () => range.parentElement.style.setProperty("--pos", range.value + "%"));
     $("#new-version-btn").addEventListener("click", () => openVersionModal(a));
     const login = $("#approver-login"); if (login) login.addEventListener("click", () => openApproverLogin(() => drawDetail()));
     $$("[data-act]").forEach((b) => b.addEventListener("click", () => openStatusModal(a, b.dataset.act)));
     const del = $("#delete-asset"); if (del) del.addEventListener("click", () => deleteAsset(a));
     $$("[data-del-comment]").forEach((b) => b.addEventListener("click", () => deleteComment(b.dataset.delComment)));
+    const nameIn = $('#comment-form input[name="name"]');
+    nameIn.addEventListener("input", () => { const av = $("#comment-form .avatar"); av.outerHTML = avatar(nameIn.value || "?"); });
 
     $("#comment-form").addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -474,6 +551,32 @@
         await renderDetail(a.id, true);
       } catch (err) { toast(errMsg(err), true); btn.disabled = false; }
     });
+  }
+
+  function compareHtml(va, vb) {
+    if (!va || !vb) return viewerHtml(vb);
+    if (va.media_type === "image" && vb.media_type === "image") {
+      return `<div class="cmp">
+        <img class="cmp-a" src="${esc(safeUrl(va.url))}" alt="v${va.version_number}">
+        <img class="cmp-b" src="${esc(safeUrl(vb.url))}" alt="v${vb.version_number}">
+        <div class="cmp-line"></div><div class="cmp-knob">‹›</div>
+        <span class="cmp-label l">v${va.version_number}</span><span class="cmp-label r">v${vb.version_number}</span>
+        <input type="range" min="0" max="100" value="50" aria-label="Compare slider">
+      </div>`;
+    }
+    return `<div class="cmp-side">
+      <div><span class="cmp-label l">v${va.version_number}</span>${viewerHtml(va, true)}</div>
+      <div><span class="cmp-label l">v${vb.version_number}</span>${viewerHtml(vb, true)}</div>
+    </div>`;
+  }
+
+  function avatar(name) {
+    const n = String(name || "?").trim() || "?";
+    const parts = n.split(/\s+/);
+    const initials = ((parts[0] || "")[0] + (parts.length > 1 ? parts[parts.length - 1][0] : (parts[0][1] || ""))).toUpperCase();
+    let h = 0; for (const ch of n.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) % 360;
+    const palette = ["#0071e3", "#34c759", "#ff9f0a", "#af52de", "#ff2d55", "#5ac8fa", "#ff3b30", "#5856d6", "#a2845e", "#30b0c7"];
+    return `<span class="avatar" style="background:${palette[h % palette.length]}">${esc(n === "?" ? "?" : initials)}</span>`;
   }
 
   function openLightbox(src) {
@@ -503,24 +606,31 @@
 
   // Shared "file or link" source picker
   const sourceFieldsHtml = () => `
-    <div class="field" style="margin-bottom:12px">
-      <div class="seg" style="margin-bottom:8px">
+    <div class="field" style="margin-bottom:14px">
+      <div class="seg">
         <label><input type="radio" name="src" value="file" checked>Upload file</label>
         <label><input type="radio" name="src" value="link">Paste link</label>
       </div>
       <div data-src="file">
-        <input type="file" name="file" accept="image/*,video/*,application/pdf,.pdf,.ai,.psd,.zip,.pptx,.docx">
-        <div class="small muted" style="margin-top:4px">Images, PDFs, videos — up to ${MAX_MB} MB. For bigger videos, use a YouTube or Google Drive link.</div>
+        <div class="dropzone">
+          <input type="file" name="file" accept="image/*,video/*,application/pdf,.pdf,.ai,.psd,.zip,.pptx,.docx">
+          <div class="hint">or drag a file here · images, PDFs, video · up to ${MAX_MB} MB</div>
+        </div>
+        <div class="hint">Bigger videos: upload to YouTube or Google Drive and paste the link.</div>
       </div>
       <div data-src="link" hidden>
-        <input type="url" name="link" placeholder="https://… (YouTube, Google Drive, Canva, etc.)">
-        <div class="small muted" style="margin-top:4px">Google Drive files must be shared as “Anyone with the link”.</div>
+        <input type="url" name="link" placeholder="https://youtube.com/…, drive.google.com/…, canva.com/…">
+        <div class="hint">Google Drive files must be shared as “Anyone with the link”.</div>
       </div>
     </div>`;
   function wireSource(modal) {
     $$('input[name="src"]', modal).forEach((r) => r.addEventListener("change", () => {
       $$("[data-src]", modal).forEach((el) => (el.hidden = el.dataset.src !== r.value));
     }));
+    const dz = $(".dropzone", modal), input = $('input[name="file"]', modal);
+    ["dragenter", "dragover"].forEach((t) => dz.addEventListener(t, (e) => { e.preventDefault(); dz.classList.add("over"); }));
+    ["dragleave", "drop"].forEach((t) => dz.addEventListener(t, (e) => { e.preventDefault(); dz.classList.remove("over"); }));
+    dz.addEventListener("drop", (e) => { if (e.dataTransfer.files.length) input.files = e.dataTransfer.files; });
   }
   async function resolveSource(modal, setStatus) {
     const mode = $('input[name="src"]:checked', modal).value;
@@ -543,6 +653,7 @@
     const preset = state.detail ? state.detail.asset.project_id : (f.project !== "all" && f.project !== "none" ? f.project : "");
     const modal = openModal(`
       <h2>New asset</h2>
+      <p class="lead">Add something for the team to review.</p>
       <form>
         <label class="field"><span>Project / section</span>
           <select name="project">
@@ -592,7 +703,7 @@
     const next = a.current_version + 1;
     const modal = openModal(`
       <h2>Upload v${next} of “${esc(a.title)}”</h2>
-      <p class="small muted" style="margin-top:-6px">The new version will be marked <b>Ready for Approval</b>.${a.status === "approved" ? " This asset is currently approved — uploading will reopen it." : ""}</p>
+      <p class="lead">The new version will be marked <b>Ready for Approval</b>.${a.status === "approved" ? " This asset is currently approved — uploading will reopen it." : ""}</p>
       <form>
         ${sourceFieldsHtml()}
         <label class="field"><span>What changed?</span><textarea name="notes" maxlength="2000" placeholder="e.g. Fixed spelling, enlarged logo per comments"></textarea></label>
@@ -622,7 +733,7 @@
   function openApproverLogin(onDone) {
     const modal = openModal(`
       <h2>Approver sign-in</h2>
-      <p class="small muted" style="margin-top:-6px">Only people on the approver list can approve assets.${DEMO ? " <b>Demo passcode: demo</b>" : ""} You'll stay signed in until you close this tab.</p>
+      <p class="lead">Only people on the approver list can approve assets.${DEMO ? " <b>Demo passcode: demo</b>" : ""} You'll stay signed in until you close this tab.</p>
       <form>
         <label class="field"><span>Approver name</span><input type="text" name="name" maxlength="80" required value="${esc(store.name)}"></label>
         <label class="field"><span>Passcode</span><input type="password" name="pass" required autocomplete="current-password"></label>
