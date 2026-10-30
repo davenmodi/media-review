@@ -21,6 +21,7 @@
   const $$ = (sel, el = document) => Array.from(el.querySelectorAll(sel));
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const fmtSize = (b) => (b >= 1073741824 ? (b / 1073741824).toFixed(b >= 10737418240 ? 0 : 1) + " GB" : b >= 1048576 ? Math.round(b / 1048576) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB");
   const safeUrl = (u) => (/^(https?:|data:|blob:)/i.test(String(u || "")) ? u : "#");
   const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
   const badge = (status, pill = false) => `<span class="status st-${esc(status)}${pill ? " pill" : ""}"><i></i>${esc(STATUS[status] || status)}</span>`;
@@ -124,10 +125,42 @@
         ]);
         return asset ? { asset, versions, comments } : null;
       },
-      async uploadFile(file) {
+      async uploadFile(file, onProgress) {
         const clean = file.name.replace(/[^\w.\-]+/g, "_").slice(-80);
         const path = `${uid()}/${clean}`;
-        ok(await sb.storage.from("media").upload(path, file, { contentType: file.type || undefined }));
+        const CHUNK = 6 * 1024 * 1024; // Supabase requires exactly 6 MB chunks
+        if (file.size <= CHUNK) {
+          ok(await sb.storage.from("media").upload(path, file, { contentType: file.type || undefined }));
+          onProgress && onProgress(1);
+        } else {
+          // Large file: resumable (TUS) upload — chunked, retries on network blips, reports progress.
+          if (!window.tus) await loadScript("https://cdn.jsdelivr.net/npm/tus-js-client@4/dist/tus.min.js");
+          const m = cfg.SUPABASE_URL.match(/^https:\/\/([a-z0-9]+)\.supabase\.co/i);
+          const endpoint = m
+            ? `https://${m[1]}.storage.supabase.co/storage/v1/upload/resumable`
+            : `${cfg.SUPABASE_URL.replace(/\/$/, "")}/storage/v1/upload/resumable`;
+          await new Promise((resolve, reject) => {
+            const upload = new window.tus.Upload(file, {
+              endpoint,
+              retryDelays: [0, 3000, 5000, 10000, 20000],
+              headers: { authorization: `Bearer ${cfg.SUPABASE_ANON_KEY}`, apikey: cfg.SUPABASE_ANON_KEY },
+              uploadDataDuringCreation: true,
+              removeFingerprintOnSuccess: true,
+              metadata: { bucketName: "media", objectName: path, contentType: file.type || "application/octet-stream", cacheControl: "3600" },
+              chunkSize: CHUNK,
+              onError: (err) => {
+                const body = err && err.originalResponse && err.originalResponse.getBody && err.originalResponse.getBody();
+                reject(new Error(body ? `Upload failed: ${String(body).slice(0, 200)}` : (err && err.message) || "Upload failed"));
+              },
+              onProgress: (sent, total) => onProgress && onProgress(sent / total),
+              onSuccess: resolve,
+            });
+            upload.findPreviousUploads().then((prev) => {
+              if (prev.length) upload.resumeFromPreviousUpload(prev[0]);
+              upload.start();
+            });
+          });
+        }
         const { data } = sb.storage.from("media").getPublicUrl(path);
         return { url: data.publicUrl, storage_path: path };
       },
@@ -650,9 +683,9 @@
       <div data-src="file">
         <div class="dropzone">
           <input type="file" name="file" accept="image/*,video/*,application/pdf,.pdf,.ai,.psd,.zip,.pptx,.docx">
-          <div class="hint">or drag a file here · images, PDFs, video · up to ${MAX_MB} MB</div>
+          <div class="hint">or drag a file here · images, PDFs, video · up to ${fmtSize(MAX_MB * 1048576)}</div>
         </div>
-        <div class="hint">Bigger videos: upload to YouTube or Google Drive and paste the link.</div>
+        <div class="hint">Video plays best as MP4 (H.264). iPhone .mov/HEVC may not play in every browser.</div>
       </div>
       <div data-src="link" hidden>
         <input type="url" name="link" placeholder="https://youtube.com/…, drive.google.com/…, canva.com/…">
@@ -673,9 +706,10 @@
     if (mode === "file") {
       const file = $('input[name="file"]', modal).files[0];
       if (!file) throw new Error("Choose a file to upload.");
-      if (file.size > MAX_MB * 1024 * 1024) throw new Error(`That file is ${(file.size / 1048576).toFixed(1)} MB — the limit is ${MAX_MB} MB. Upload it to Google Drive or YouTube and paste the link instead.`);
-      setStatus(`Uploading ${file.name}…`);
-      const up = await api.uploadFile(file);
+      if (file.size > MAX_MB * 1024 * 1024) throw new Error(`That file is ${fmtSize(file.size)} — the limit is ${fmtSize(MAX_MB * 1048576)}. Upload it to Google Drive or YouTube and paste the link instead.`);
+      const sizeTxt = fmtSize(file.size);
+      setStatus(`Uploading ${file.name} (${sizeTxt})…`);
+      const up = await api.uploadFile(file, (frac) => setStatus(`Uploading ${file.name} — ${Math.round(frac * 100)}% of ${sizeTxt}`, frac));
       return { ...up, media_type: mediaTypeFromFile(file), file_name: file.name };
     }
     const link = $('input[name="link"]', modal).value.trim();
@@ -713,7 +747,14 @@
     $("form", modal).addEventListener("submit", async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target); const btn = $('button[type=submit]', modal); const err = $("[data-err]", modal);
-      const setStatus = (t) => { err.style.color = "var(--muted)"; err.textContent = t; };
+      const setStatus = (t, frac) => {
+        err.style.color = "var(--text-2)"; err.textContent = t;
+        let bar = $(".progress", modal);
+        if (frac != null) {
+          if (!bar) { bar = document.createElement("div"); bar.className = "progress"; bar.innerHTML = "<i></i>"; err.after(bar); }
+          bar.firstChild.style.width = Math.round(frac * 100) + "%";
+        } else if (bar && /Saving/.test(t)) bar.remove();
+      };
       err.textContent = ""; err.style.color = ""; btn.disabled = true;
       try {
         const name = String(fd.get("name")).trim(), title = String(fd.get("title")).trim();
@@ -751,7 +792,14 @@
     $("form", modal).addEventListener("submit", async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target); const btn = $('button[type=submit]', modal); const err = $("[data-err]", modal);
-      const setStatus = (t) => { err.style.color = "var(--muted)"; err.textContent = t; };
+      const setStatus = (t, frac) => {
+        err.style.color = "var(--text-2)"; err.textContent = t;
+        let bar = $(".progress", modal);
+        if (frac != null) {
+          if (!bar) { bar = document.createElement("div"); bar.className = "progress"; bar.innerHTML = "<i></i>"; err.after(bar); }
+          bar.firstChild.style.width = Math.round(frac * 100) + "%";
+        } else if (bar && /Saving/.test(t)) bar.remove();
+      };
       err.textContent = ""; btn.disabled = true;
       try {
         const name = String(fd.get("name")).trim();

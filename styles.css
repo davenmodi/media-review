@@ -401,3 +401,5 @@ label.field > span, .field-label { display: block; font-size: 13px; font-weight:
 .step.done b { color: var(--text); }
 .step.done + .step::before, .step.done + .step.now::before { background: var(--green); }
 .wait-note { margin: 0; font-size: 13px; color: var(--text-2); text-align: center; background: var(--fill); border-radius: 12px; padding: 10px 12px; }
+.progress { height: 6px; border-radius: 3px; background: var(--fill); overflow: hidden; margin-top: 8px; }
+.progress i { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 3px; transition: width 0.25s var(--ease); }
