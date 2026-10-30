@@ -5,5 +5,5 @@ window.REVIEW_CONFIG = {
   SUPABASE_URL: "https://ugtzpridexbejbvctvsf.supabase.co",
   SUPABASE_ANON_KEY: "sb_publishable_OaL_yoXFsEK5OPku2mTSEA_kKhVoE3Z",
   SITE_TITLE: "Diwali Exhibition – Media Review",
-  MAX_UPLOAD_MB: 50
+  MAX_UPLOAD_MB: 5000
 };
