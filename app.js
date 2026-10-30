@@ -10,10 +10,11 @@
   const STATUS = {
     in_review:          "In Review",
     ready_for_approval: "Ready for Approval",
+    pending_final:      "Awaiting Final Approval",
     changes_requested:  "Changes Requested",
     approved:           "Approved",
   };
-  const STATUS_ORDER = ["ready_for_approval", "in_review", "changes_requested", "approved"];
+  const STATUS_ORDER = ["ready_for_approval", "pending_final", "in_review", "changes_requested", "approved"];
 
   // ---------- small utilities ------------------------------------------
   const $ = (sel, el = document) => el.querySelector(sel);
@@ -145,7 +146,7 @@
       async addComment(p) {
         ok(await sb.from("comments").insert({ asset_id: p.asset_id, version_number: p.version_number, author: p.name.trim(), body: p.body.trim() }));
       },
-      async verifyApprover(name, passcode) { return ok(await sb.rpc("verify_approver", { p_approver: name, p_passcode: passcode })); },
+      async verifyApprover(name, passcode) { return ok(await sb.rpc("approver_info", { p_approver: name, p_passcode: passcode })); },
       async setStatus(p) {
         ok(await sb.rpc("set_status", { p_asset_id: p.asset_id, p_status: p.status, p_approver: p.approver, p_passcode: p.passcode, p_note: p.note || null }));
       },
@@ -156,7 +157,7 @@
 
   // Demo backend: everything in localStorage. Approver passcode is "demo".
   function demoBackend() {
-    const KEY = "mr_demo_db_v1";
+    const KEY = "mr_demo_db_v2";
     const load = () => { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } };
     let db = load();
     const save = () => {
@@ -178,7 +179,7 @@
         assets: [
           { id: a1, project_id: p1, title: "Entrance banner", description: "Main banner at the section entrance. 6ft × 3ft.", status: "ready_for_approval", current_version: 2, created_by: "Daven", created_at: ago(50), updated_at: ago(3) },
           { id: a2, project_id: p1, title: "Panel 2 – timeline", description: "", status: "in_review", current_version: 1, created_by: "Daven", created_at: ago(30), updated_at: ago(30) },
-          { id: a3, project_id: p2, title: "Instagram teaser", description: "Square post for the launch.", status: "approved", current_version: 1, approved_version: 1, approved_by: "Demo", approved_at: ago(5), created_by: "Daven", created_at: ago(40), updated_at: ago(5) },
+          { id: a3, project_id: p2, title: "Instagram teaser", description: "Square post for the launch.", status: "approved", current_version: 1, approved_version: 1, first_approved_by: "Daven", approved_by: "Demo", approved_at: ago(5), created_by: "Daven", created_at: ago(40), updated_at: ago(5) },
         ],
         versions: [
           { id: uid(), asset_id: a1, version_number: 1, media_type: "image", url: svg("#f1e3c6", "#7a4a00", "Banner v1"), uploaded_by: "Daven", notes: "First draft", created_at: ago(50) },
@@ -192,15 +193,18 @@
           { id: uid(), asset_id: a1, version_number: 2, author: "Daven", body: "Uploaded v2 — ready for approval", kind: "event", created_at: ago(3) },
           { id: uid(), asset_id: a2, version_number: 1, author: "Daven", body: "Uploaded v1", kind: "event", created_at: ago(30) },
           { id: uid(), asset_id: a3, version_number: 1, author: "Daven", body: "Uploaded v1", kind: "event", created_at: ago(40) },
-          { id: uid(), asset_id: a3, version_number: 1, author: "Demo", body: "✅ Approved v1", kind: "event", created_at: ago(5) },
+          { id: uid(), asset_id: a3, version_number: 1, author: "Daven", body: "☑️ First approval — v1, sent for final approval", kind: "event", created_at: ago(8) },
+          { id: uid(), asset_id: a3, version_number: 1, author: "Demo", body: "✅ Final approval — v1", kind: "event", created_at: ago(5) },
         ],
       };
       save();
     }
 
+    // Demo passcodes: "demo" = first approver (level 1), "final" = final approver (level 2)
     const checkApprover = (name, pass) => {
-      if (!String(name || "").trim() || pass !== "demo") throw new Error("Approver name or passcode is incorrect (demo passcode: demo)");
-      return String(name).trim();
+      const level = { demo: 1, final: 2 }[pass];
+      if (!String(name || "").trim() || !level) throw new Error("Approver name or passcode is incorrect (demo: “demo” = first, “final” = final)");
+      return { name: String(name).trim(), level };
     };
     const asset = (id) => { const a = db.assets.find((x) => x.id === id); if (!a) throw new Error("Asset not found"); return a; };
     const event = (asset_id, version_number, author, body) =>
@@ -242,7 +246,7 @@
       async addVersion(p) {
         const a = asset(p.asset_id); const n = a.current_version + 1;
         db.versions.push({ id: uid(), asset_id: a.id, version_number: n, media_type: p.media_type, url: p.url, file_name: p.file_name, notes: (p.notes || "").trim(), uploaded_by: p.name.trim(), created_at: now() });
-        Object.assign(a, { current_version: n, status: "ready_for_approval", approved_version: null, approved_by: null, approved_at: null, updated_at: now() });
+        Object.assign(a, { current_version: n, status: "ready_for_approval", first_approved_by: null, first_approved_at: null, approved_version: null, approved_by: null, approved_at: null, updated_at: now() });
         event(a.id, n, p.name.trim(), `Uploaded v${n} — ready for approval`);
         save(); return delay(n);
       },
@@ -252,12 +256,26 @@
       },
       async verifyApprover(name, pass) { return delay(checkApprover(name, pass)); },
       async setStatus(p) {
-        const who = checkApprover(p.approver, p.passcode); const a = asset(p.asset_id);
-        const approved = p.status === "approved";
-        Object.assign(a, { status: p.status, approved_version: approved ? a.current_version : null, approved_by: approved ? who : null, approved_at: approved ? now() : null, updated_at: now() });
-        let body = { approved: `✅ Approved v${a.current_version}`, changes_requested: `✏️ Requested changes on v${a.current_version}`, in_review: "Reopened for review" }[p.status];
+        const ap = checkApprover(p.approver, p.passcode); const a = asset(p.asset_id); const v = a.current_version;
+        let body;
+        if (p.status === "approved") {
+          if (a.status === "approved") throw new Error("This version is already approved");
+          if (a.status === "pending_final") {
+            if (ap.level !== 2) throw new Error("First approval is done — this now needs a final approver");
+            Object.assign(a, { status: "approved", approved_version: v, approved_by: ap.name, approved_at: now() });
+            body = `✅ Final approval — v${v}`;
+          } else {
+            if (ap.level !== 1) throw new Error("This needs first approval before it can get final approval");
+            Object.assign(a, { status: "pending_final", first_approved_by: ap.name, first_approved_at: now() });
+            body = `☑️ First approval — v${v}, sent for final approval`;
+          }
+        } else {
+          Object.assign(a, { status: p.status, first_approved_by: null, first_approved_at: null, approved_version: null, approved_by: null, approved_at: null });
+          body = p.status === "changes_requested" ? `✏️ Requested changes on v${v}` : "Reopened for review";
+        }
+        a.updated_at = now();
         if (p.note && p.note.trim()) body += " — " + p.note.trim();
-        event(a.id, a.current_version, who, body);
+        event(a.id, v, ap.name, body);
         save(); return delay();
       },
       async deleteAsset(p) {
@@ -338,7 +356,10 @@
     projects.forEach((p) => byProject.has(p.id) && groups.push({ name: p.name, items: byProject.get(p.id) }));
     if (byProject.has("none")) groups.push({ name: "Unsorted", items: byProject.get("none") });
 
-    const awaiting = f.status === "all" ? inScope.filter((a) => a.status === "ready_for_approval") : [];
+    const me = store.approver;
+    const waitingFor = me ? (me.level === 2 ? ["pending_final"] : ["ready_for_approval"]) : ["ready_for_approval", "pending_final"];
+    const awaiting = f.status === "all" ? inScope.filter((a) => waitingFor.includes(a.status)) : [];
+    const shelfTitle = me ? (me.level === 2 ? "Awaiting your final approval" : "Awaiting your approval") : "Awaiting approval";
     const projectName = (id) => (projects.find((p) => p.id === id) || {}).name || "Unsorted";
 
     const card = (a, showProject = false) => `
@@ -359,7 +380,7 @@
       </section>
       ${awaiting.length ? `
         <section class="shelf">
-          <div class="shelf-head"><span class="dot"></span><h2>Awaiting approval</h2><span class="count">${awaiting.length}</span></div>
+          <div class="shelf-head"><span class="dot"></span><h2>${esc(shelfTitle)}</h2><span class="count">${awaiting.length}</span></div>
           <div class="shelf-row">${awaiting.map((a) => card(a, true)).join("")}</div>
         </section>` : ""}
       <div class="toolbar">
@@ -451,15 +472,29 @@
     // ----- status panel
     const statusCopy = {
       in_review: ["In review", "Waiting on feedback."],
-      ready_for_approval: ["Ready for approval", `v${a.current_version} is waiting for an approver.`],
+      ready_for_approval: ["Ready for approval", `Step 1 of 2 · v${a.current_version} needs first approval.`],
+      pending_final: ["Awaiting final approval", `Step 2 of 2 · first approval by ${a.first_approved_by || "—"}.`],
       changes_requested: ["Changes requested", `Upload v${a.current_version + 1} when it's ready.`],
-      approved: ["Approved", `v${a.approved_version} by ${a.approved_by || "—"} · ${a.approved_at ? fullDate(a.approved_at) : ""}`],
+      approved: ["Approved", `v${a.approved_version} · first: ${a.first_approved_by || "—"} · final: ${a.approved_by || "—"}`],
     }[a.status] || [STATUS[a.status], ""];
-    const statusIcon = { in_review: ICON.eye, ready_for_approval: ICON.clock, changes_requested: ICON.pencil, approved: ICON.check }[a.status] || "";
-    const approverBtns = a.status === "approved"
-      ? `<button class="btn" data-act="in_review">Reopen for review</button>`
-      : `<button class="btn btn-approve btn-lg" data-act="approved">${ICON.check} Approve v${a.current_version}</button>
-         <button class="btn btn-changes" data-act="changes_requested">Request changes</button>`;
+    const statusIcon = { in_review: ICON.eye, ready_for_approval: ICON.clock, pending_final: ICON.clock, changes_requested: ICON.pencil, approved: ICON.check }[a.status] || "";
+    const steps = `
+      <div class="steps">
+        <div class="step ${a.first_approved_by ? "done" : (["ready_for_approval", "in_review", "changes_requested"].includes(a.status) ? "now" : "")}"><span class="n">${a.first_approved_by ? ICON.check : "1"}</span><div><b>First approval</b><span>${esc(a.first_approved_by || "Level 1 approver")}</span></div></div>
+        <div class="step ${a.status === "approved" ? "done" : (a.status === "pending_final" ? "now" : "")}"><span class="n">${a.status === "approved" ? ICON.check : "2"}</span><div><b>Final approval</b><span>${esc(a.status === "approved" ? a.approved_by : "Level 2 approver")}</span></div></div>
+      </div>`;
+    let approverBtns = "";
+    if (approver) {
+      const lvl = approver.level || 1;
+      const changes = `<button class="btn btn-changes" data-act="changes_requested">Request changes</button>`;
+      if (a.status === "approved") approverBtns = `<button class="btn" data-act="in_review">Reopen for review</button>`;
+      else if (a.status === "pending_final") approverBtns = lvl === 2
+        ? `<button class="btn btn-approve btn-lg" data-act="approved">${ICON.check} Final approve v${a.current_version}</button>${changes}`
+        : `<p class="wait-note">Waiting for final approval.</p>${changes}`;
+      else approverBtns = lvl === 1
+        ? `<button class="btn btn-approve btn-lg" data-act="approved">${ICON.check} Approve v${a.current_version}</button>${changes}`
+        : `<p class="wait-note">Needs first approval before you can give final approval.</p>${changes}`;
+    }
 
     $("#app").innerHTML = `
       <div class="${animate ? "fade-in" : ""}">
@@ -496,6 +531,7 @@
           <div class="panel">
             <h3>Status</h3>
             <div class="status-big"><span class="ring st-${esc(a.status)}">${statusIcon}</span><div><div class="t st-${esc(a.status)}">${esc(statusCopy[0])}</div><div class="s">${esc(statusCopy[1])}</div></div></div>
+            ${steps}
             <div class="actions">
               <button class="btn btn-primary" id="new-version-btn">${ICON.upload} Upload revised version</button>
               ${approver ? approverBtns : `<button class="btn" id="approver-login">Sign in to approve</button>`}
@@ -733,7 +769,7 @@
   function openApproverLogin(onDone) {
     const modal = openModal(`
       <h2>Approver sign-in</h2>
-      <p class="lead">Only people on the approver list can approve assets.${DEMO ? " <b>Demo passcode: demo</b>" : ""} You'll stay signed in until you close this tab.</p>
+      <p class="lead">Only people on the approver list can approve assets.${DEMO ? " <b>Demo passcodes: “demo” (first approver) or “final” (final approver).</b>" : ""} You'll stay signed in until you close this tab.</p>
       <form>
         <label class="field"><span>Approver name</span><input type="text" name="name" maxlength="80" required value="${esc(store.name)}"></label>
         <label class="field"><span>Passcode</span><input type="password" name="pass" required autocomplete="current-password"></label>
@@ -746,9 +782,10 @@
       btn.disabled = true; err.textContent = "";
       try {
         const name = String(fd.get("name")).trim(), pass = String(fd.get("pass"));
-        const canonical = await api.verifyApprover(name, pass);
-        store.approver = { name: canonical || name, pass };
-        closeModal(); updateHeader(); toast(`Signed in as approver: ${canonical || name}`);
+        const info = await api.verifyApprover(name, pass);
+        const who = (info && info.name) || name, level = (info && info.level) || 1;
+        store.approver = { name: who, pass, level };
+        closeModal(); updateHeader(); toast(`Signed in as ${level === 2 ? "final" : "first"} approver: ${who}`);
         onDone && onDone();
       } catch (ex) { err.textContent = errMsg(ex); btn.disabled = false; }
     });
@@ -762,15 +799,15 @@
 
   function openStatusModal(a, status) {
     withApprover((ap) => {
-      const titles = { approved: `Approve v${a.current_version}?`, changes_requested: `Request changes on v${a.current_version}`, in_review: "Reopen for review" };
-      const labels = { approved: "Approve", changes_requested: "Request changes", in_review: "Reopen" };
+      const titles = { approved: a.status === "pending_final" ? `Final approval for v${a.current_version}?` : `Approve v${a.current_version}?`, changes_requested: `Request changes on v${a.current_version}`, in_review: "Reopen for review" };
+      const labels = { approved: a.status === "pending_final" ? "Give final approval" : "Approve", changes_requested: "Request changes", in_review: "Reopen" };
       const btnCls = { approved: "btn-approve", changes_requested: "btn-primary", in_review: "btn-primary" };
       const modal = openModal(`
         <h2>${esc(titles[status])}</h2>
         <form>
           <label class="field"><span>${status === "changes_requested" ? "What needs to change?" : "Note"} <span class="muted" style="font-weight:400">${status === "changes_requested" ? "" : "(optional)"}</span></span>
             <textarea name="note" maxlength="2000" ${status === "changes_requested" ? "required" : ""}></textarea></label>
-          <p class="small muted">Signed in as <b>${esc(ap.name)}</b></p>
+          <p class="small muted">Signed in as <b>${esc(ap.name)}</b> (${(ap.level || 1) === 2 ? "final" : "first"} approver)${status === "approved" && a.status !== "pending_final" ? ". After you approve, it goes to the final approver." : ""}</p>
           <div class="error" data-err></div>
           <div class="footer"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn ${btnCls[status]}">${labels[status]}</button></div>
         </form>`);
@@ -780,7 +817,7 @@
         btn.disabled = true;
         try {
           await api.setStatus({ asset_id: a.id, status, approver: ap.name, passcode: ap.pass, note: new FormData(e.target).get("note") });
-          closeModal(); toast(status === "approved" ? "Approved ✅" : "Status updated");
+          closeModal(); toast(status === "approved" ? (a.status === "pending_final" ? "Final approval given ✅" : "Approved — sent for final approval") : "Status updated");
           await renderDetail(a.id, true);
         } catch (ex) {
           err.textContent = errMsg(ex); btn.disabled = false;
@@ -807,10 +844,11 @@
 
   // ---------- header + routing ----------------------------------------
   function updateHeader() {
+    if (store.approver && !store.approver.level) store.approver = null;
     const ap = store.approver; const flag = $("#approver-flag");
     if (ap) {
       flag.hidden = false;
-      flag.innerHTML = `Approver: ${esc(ap.name)}<button id="ap-out">sign out</button>`;
+      flag.innerHTML = `${(ap.level || 1) === 2 ? "Final approver" : "Approver"}: ${esc(ap.name)}<button id="ap-out">sign out</button>`;
       $("#ap-out").addEventListener("click", () => { store.approver = null; updateHeader(); route(); });
     } else flag.hidden = true;
   }
