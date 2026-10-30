@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Media Review</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="#/" class="brand" id="brand">Media Review</a>
+    <div class="topbar-right">
+      <span id="demo-flag" class="demo-flag" hidden>Demo mode — data saved in this browser only</span>
+      <span id="approver-flag" class="approver-flag" hidden></span>
+      <button id="new-asset-btn" class="btn btn-primary">+ New asset</button>
+    </div>
+  </header>
+  <main id="app"><p class="muted center pad">Loading…</p></main>
+  <div id="modal-root"></div>
+  <div id="toast" class="toast" hidden></div>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
