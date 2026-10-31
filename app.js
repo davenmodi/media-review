@@ -107,8 +107,9 @@
     const ok = ({ data, error }) => { if (error) throw error; return data; };
 
     return {
+      async listTeams() { return ok(await sb.from("teams").select("*").order("sort").order("name")); },
       async listProjects() { return ok(await sb.from("projects").select("*").order("name")); },
-      async createProject(name) { return ok(await sb.from("projects").insert({ name: name.trim() }).select().single()); },
+      async createProject(name, team_id) { return ok(await sb.from("projects").insert({ name: name.trim(), team_id }).select().single()); },
       async listAssets() {
         const rows = ok(await sb.from("assets").select("*, versions(*), comments(kind)").order("updated_at", { ascending: false }));
         return rows.map((a) => ({
@@ -166,7 +167,7 @@
       },
       async createAsset(p) {
         return ok(await sb.rpc("create_asset", {
-          p_project_id: p.project_id, p_title: p.title, p_description: p.description, p_created_by: p.name,
+          p_team_id: p.team_id, p_project_id: p.project_id, p_title: p.title, p_description: p.description, p_created_by: p.name,
           p_media_type: p.media_type, p_url: p.url, p_storage_path: p.storage_path, p_file_name: p.file_name, p_notes: p.notes,
         }));
       },
@@ -190,7 +191,7 @@
 
   // Demo backend: everything in localStorage. Approver passcode is "demo".
   function demoBackend() {
-    const KEY = "mr_demo_db_v2";
+    const KEY = "mr_demo_db_v4";
     const load = () => { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } };
     let db = load();
     const save = () => {
@@ -206,19 +207,28 @@
       `<text x="80" y="330" font-family="Helvetica,Arial" font-size="56" font-weight="700" fill="${fg}">${label}</text></svg>`);
 
     if (!db) {
-      const p1 = uid(), p2 = uid(), a1 = uid(), a2 = uid(), a3 = uid();
+      const T = [["Jivan Shaili", "jivan-shaili"], ["Riti–Parampara", "riti-parampara"], ["Manyata", "manyata"], ["Festivals", "festivals"], ["Mulyo", "mulyo"], ["Adhar Stambh", "adhar-stambh"]]
+        .map(([name, slug], i) => ({ id: uid(), name, slug, sort: i + 1, created_at: ago(90) }));
+      const p1 = uid(), p2 = uid(), p3 = uid(), a1 = uid(), a2 = uid(), a3 = uid(), a4 = uid();
       db = {
-        projects: [{ id: p1, name: "Section 6 – Shastra", created_at: ago(80) }, { id: p2, name: "Social posts", created_at: ago(80) }],
+        teams: T,
+        projects: [
+          { id: p1, team_id: T[5].id, name: "Section 6 – Shastra", created_at: ago(80) },
+          { id: p2, team_id: T[5].id, name: "Social posts", created_at: ago(80) },
+          { id: p3, team_id: T[3].id, name: "Signage", created_at: ago(80) },
+        ],
         assets: [
-          { id: a1, project_id: p1, title: "Entrance banner", description: "Main banner at the section entrance. 6ft × 3ft.", status: "ready_for_approval", current_version: 2, created_by: "Daven", created_at: ago(50), updated_at: ago(3) },
-          { id: a2, project_id: p1, title: "Panel 2 – timeline", description: "", status: "in_review", current_version: 1, created_by: "Daven", created_at: ago(30), updated_at: ago(30) },
-          { id: a3, project_id: p2, title: "Instagram teaser", description: "Square post for the launch.", status: "approved", current_version: 1, approved_version: 1, first_approved_by: "Daven", approved_by: "Demo", approved_at: ago(5), created_by: "Daven", created_at: ago(40), updated_at: ago(5) },
+          { id: a1, team_id: T[5].id, project_id: p1, title: "Entrance banner", description: "Main banner at the section entrance. 6ft × 3ft.", status: "ready_for_approval", current_version: 2, created_by: "Daven", created_at: ago(50), updated_at: ago(3) },
+          { id: a2, team_id: T[5].id, project_id: p1, title: "Panel 2 – timeline", description: "", status: "in_review", current_version: 1, created_by: "Daven", created_at: ago(30), updated_at: ago(30) },
+          { id: a3, team_id: T[5].id, project_id: p2, title: "Instagram teaser", description: "Square post for the launch.", status: "approved", current_version: 1, approved_version: 1, first_approved_by: "Daven", approved_by: "Final", approved_at: ago(5), created_by: "Daven", created_at: ago(40), updated_at: ago(5) },
+          { id: a4, team_id: T[3].id, project_id: p3, title: "Wayfinding sign", description: "", status: "pending_final", current_version: 1, first_approved_by: "Festivals approver", created_by: "Riya", created_at: ago(20), updated_at: ago(2) },
         ],
         versions: [
           { id: uid(), asset_id: a1, version_number: 1, media_type: "image", url: svg("#f1e3c6", "#7a4a00", "Banner v1"), uploaded_by: "Daven", notes: "First draft", created_at: ago(50) },
           { id: uid(), asset_id: a1, version_number: 2, media_type: "image", url: svg("#ffe1b3", "#8a3b00", "Banner v2"), uploaded_by: "Daven", notes: "Bigger title, warmer colours per feedback", created_at: ago(3) },
           { id: uid(), asset_id: a2, version_number: 1, media_type: "image", url: svg("#dfe8ff", "#1d3a8a", "Timeline"), uploaded_by: "Daven", notes: "", created_at: ago(30) },
           { id: uid(), asset_id: a3, version_number: 1, media_type: "image", url: svg("#dff3e6", "#1e6b3c", "Teaser"), uploaded_by: "Daven", notes: "", created_at: ago(40) },
+          { id: uid(), asset_id: a4, version_number: 1, media_type: "image", url: svg("#efe3ff", "#5b2a86", "Signage"), uploaded_by: "Riya", notes: "", created_at: ago(20) },
         ],
         comments: [
           { id: uid(), asset_id: a1, version_number: 1, author: "Daven", body: "Uploaded v1", kind: "event", created_at: ago(50) },
@@ -227,17 +237,21 @@
           { id: uid(), asset_id: a2, version_number: 1, author: "Daven", body: "Uploaded v1", kind: "event", created_at: ago(30) },
           { id: uid(), asset_id: a3, version_number: 1, author: "Daven", body: "Uploaded v1", kind: "event", created_at: ago(40) },
           { id: uid(), asset_id: a3, version_number: 1, author: "Daven", body: "☑️ First approval — v1, sent for final approval", kind: "event", created_at: ago(8) },
-          { id: uid(), asset_id: a3, version_number: 1, author: "Demo", body: "✅ Final approval — v1", kind: "event", created_at: ago(5) },
+          { id: uid(), asset_id: a3, version_number: 1, author: "Final", body: "✅ Final approval — v1", kind: "event", created_at: ago(5) },
+          { id: uid(), asset_id: a4, version_number: 1, author: "Riya", body: "Uploaded v1", kind: "event", created_at: ago(20) },
+          { id: uid(), asset_id: a4, version_number: 1, author: "Festivals approver", body: "☑️ First approval — v1, sent for final approval", kind: "event", created_at: ago(2) },
         ],
       };
       save();
     }
 
-    // Demo passcodes: "demo" = first approver (level 1), "final" = final approver (level 2)
+    // Demo passcodes: "team1".."team6" = that team's first approver, "final" = final approver (all teams)
     const checkApprover = (name, pass) => {
-      const level = { demo: 1, final: 2 }[pass];
-      if (!String(name || "").trim() || !level) throw new Error("Approver name or passcode is incorrect (demo: “demo” = first, “final” = final)");
-      return { name: String(name).trim(), level };
+      const n = String(name || "").trim();
+      const m = /^team([1-6])$/.exec(pass || "");
+      if (n && pass === "final") return { name: n, level: 2, team_id: null, team_name: null };
+      if (n && m) { const t = db.teams.find((x) => x.sort === +m[1]); return { name: n, level: 1, team_id: t.id, team_name: t.name }; }
+      throw new Error("Approver name or passcode is incorrect (demo: “team1”–“team6” = that team's first approver, “final” = final approver)");
     };
     const asset = (id) => { const a = db.assets.find((x) => x.id === id); if (!a) throw new Error("Asset not found"); return a; };
     const event = (asset_id, version_number, author, body) =>
@@ -245,10 +259,11 @@
     const delay = (v) => new Promise((r) => setTimeout(() => r(v), 60));
 
     return {
+      async listTeams() { return delay([...db.teams].sort((a, b) => a.sort - b.sort)); },
       async listProjects() { return delay([...db.projects].sort((a, b) => a.name.localeCompare(b.name))); },
-      async createProject(name) {
-        if (db.projects.some((p) => p.name.toLowerCase() === name.trim().toLowerCase())) throw new Error("That project already exists");
-        const p = { id: uid(), name: name.trim(), created_at: now() }; db.projects.push(p); save(); return delay(p);
+      async createProject(name, team_id) {
+        if (db.projects.some((p) => p.team_id === team_id && p.name.toLowerCase() === name.trim().toLowerCase())) throw new Error("That project already exists");
+        const p = { id: uid(), team_id, name: name.trim(), created_at: now() }; db.projects.push(p); save(); return delay(p);
       },
       async listAssets() {
         return delay([...db.assets].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).map((a) => ({
@@ -271,7 +286,8 @@
       },
       async createAsset(p) {
         const id = uid(), t = now();
-        db.assets.push({ id, project_id: p.project_id, title: p.title.trim(), description: (p.description || "").trim(), status: "in_review", current_version: 1, created_by: p.name.trim(), created_at: t, updated_at: t });
+        if (!p.team_id) throw new Error("Choose a team");
+        db.assets.push({ id, team_id: p.team_id, project_id: p.project_id, title: p.title.trim(), description: (p.description || "").trim(), status: "in_review", current_version: 1, created_by: p.name.trim(), created_at: t, updated_at: t });
         db.versions.push({ id: uid(), asset_id: id, version_number: 1, media_type: p.media_type, url: p.url, file_name: p.file_name, notes: (p.notes || "").trim(), uploaded_by: p.name.trim(), created_at: t });
         event(id, 1, p.name.trim(), "Uploaded v1");
         save(); return delay(id);
@@ -290,6 +306,10 @@
       async verifyApprover(name, pass) { return delay(checkApprover(name, pass)); },
       async setStatus(p) {
         const ap = checkApprover(p.approver, p.passcode); const a = asset(p.asset_id); const v = a.current_version;
+        if (ap.level === 1 && ap.team_id && ap.team_id !== a.team_id) {
+          const tn = (id) => (db.teams.find((t) => t.id === id) || {}).name || "no team";
+          throw new Error(`You're a first approver for ${tn(ap.team_id)}; this asset belongs to ${tn(a.team_id)}`);
+        }
         let body;
         if (p.status === "approved") {
           if (a.status === "approved") throw new Error("This version is already approved");
@@ -328,6 +348,8 @@
   // ---------- state ----------------------------------------------------
   let api;
   const state = {
+    teams: [],
+    team: null, // team currently being browsed
     projects: [],
     filters: { q: "", project: "all", status: "all" },
     detail: null, // { asset, versions, comments, selected, commentScope }
@@ -362,12 +384,90 @@
     return `<div class="fallback">${ICON.link}<p>This item can't be previewed here.</p><a class="btn btn-sm" href="${esc(url)}" target="_blank" rel="noopener">Open link ${ICON.external}</a></div>`;
   }
 
-  // ---------- gallery --------------------------------------------------
-  async function renderGallery() {
+  // ---------- shared card ----------------------------------------------
+  function assetCard(a, eyebrow = "") {
+    return `
+      <a class="card" href="#/asset/${esc(a.id)}">
+        <div class="thumb">${thumbHtml(a.current)}<span class="vtag">v${a.current_version}</span>${a.status === "approved" ? `<span class="check">${ICON.check}</span>` : ""}</div>
+        <div class="card-body">
+          ${eyebrow ? `<div class="card-eyebrow">${esc(eyebrow)}</div>` : ""}
+          <div class="card-title" title="${esc(a.title)}">${esc(a.title)}</div>
+          <div class="card-meta">${badge(a.status)}<span class="meta-r">${ICON.chat} ${a.comment_count} · ${esc(timeAgo(a.updated_at))}</span></div>
+        </div>
+      </a>`;
+  }
+  const teamById = (id) => state.teams.find((t) => t.id === id) || null;
+  const teamName = (id) => (teamById(id) || {}).name || "No team";
+
+  // What's waiting on the signed-in approver (or on anyone, if nobody is signed in).
+  function waitingOn(me, assets, teamId = null) {
+    return assets.filter((a) => {
+      if (teamId && a.team_id !== teamId) return false;
+      if (!me) return a.status === "ready_for_approval" || a.status === "pending_final";
+      if (me.level === 2) return a.status === "pending_final";
+      return a.status === "ready_for_approval" && (!me.team_id || a.team_id === me.team_id);
+    });
+  }
+
+  // ---------- home: all teams -----------------------------------------
+  async function renderHome() {
+    state.detail = null; state.team = null;
+    if (!$("#app .hero")) $("#app").innerHTML = skeletonHtml();
+    const [teams, assets, projects] = await Promise.all([api.listTeams(), api.listAssets(), api.listProjects()]);
+    state.teams = teams; state.projects = projects;
+    const me = store.approver;
+    const mine = me ? waitingOn(me, assets) : [];
+    const shelfTitle = me ? (me.level === 2 ? "Awaiting your final approval" : "Awaiting your approval") : "";
+
+    const tile = (t) => {
+      const ta = assets.filter((a) => a.team_id === t.id);
+      const n = (s) => ta.filter((a) => a.status === s).length;
+      const cells = ta.slice(0, 4).map((a) => `<div class="cell">${thumbHtml(a.current)}</div>`).join("") +
+        `<div class="cell empty-cell"></div>`.repeat(Math.max(0, 4 - Math.min(4, ta.length)));
+      const stat = (s, label) => n(s) ? `<span class="status st-${s}" title="${esc(STATUS[s])}"><i></i>${n(s)} ${label}</span>` : "";
+      return `
+        <a class="team-tile" href="#/t/${esc(t.slug)}">
+          <div class="mosaic">${cells}</div>
+          <div class="tile-body">
+            <h3>${esc(t.name)}</h3>
+            <div class="tile-sub">${ta.length} asset${ta.length === 1 ? "" : "s"}</div>
+            <div class="tile-stats">${stat("ready_for_approval", "to approve")}${stat("pending_final", "awaiting final")}${stat("changes_requested", "changes")}${stat("approved", "approved")}</div>
+          </div>
+        </a>`;
+    };
+
+    const title = cfg.SITE_TITLE || "Media Review";
+    $("#app").innerHTML = `
+      <section class="hero">
+        <h1>${esc(title)}</h1>
+        <p>Review. Comment. Approve.</p>
+      </section>
+      ${mine.length ? `
+        <section class="shelf">
+          <div class="shelf-head"><span class="dot"></span><h2>${esc(shelfTitle)}</h2><span class="count">${mine.length}</span></div>
+          <div class="shelf-row">${mine.map((a) => assetCard(a, teamName(a.team_id))).join("")}</div>
+        </section>` : ""}
+      <section class="group">
+        <div class="group-head"><h2>Teams</h2><span class="count">${teams.length}</span></div>
+        ${teams.length ? `<div class="team-grid">${teams.map(tile).join("")}</div>`
+          : `<div class="empty"><h3>No teams yet</h3><p>Run <b>teams-setup.sql</b> in Supabase to add your teams.</p></div>`}
+      </section>`;
+  }
+
+  // ---------- one team's gallery --------------------------------------
+  async function renderGallery(slug) {
     state.detail = null;
     if (!$("#app .hero")) $("#app").innerHTML = skeletonHtml();
-    const [projects, assets] = await Promise.all([api.listProjects(), api.listAssets()]);
-    state.projects = projects;
+    const [teams, allProjects, allAssets] = await Promise.all([api.listTeams(), api.listProjects(), api.listAssets()]);
+    state.teams = teams; state.projects = allProjects;
+    const team = teams.find((t) => t.slug === slug);
+    if (!team) { $("#app").innerHTML = `<div class="empty" style="margin-top:40px"><h3>Team not found</h3><a href="#/">See all teams</a></div>`; return; }
+    if (!state.team || state.team.id !== team.id) state.filters = { q: "", project: "all", status: "all" };
+    state.team = team;
+    try { localStorage.setItem("mr_last_team", team.slug); } catch {}
+
+    const projects = allProjects.filter((p) => p.team_id === team.id);
+    const assets = allAssets.filter((a) => a.team_id === team.id);
     const f = state.filters;
     if (f.project !== "all" && f.project !== "none" && !projects.some((p) => p.id === f.project)) f.project = "all";
 
@@ -390,31 +490,21 @@
     if (byProject.has("none")) groups.push({ name: "Unsorted", items: byProject.get("none") });
 
     const me = store.approver;
-    const waitingFor = me ? (me.level === 2 ? ["pending_final"] : ["ready_for_approval"]) : ["ready_for_approval", "pending_final"];
-    const awaiting = f.status === "all" ? inScope.filter((a) => waitingFor.includes(a.status)) : [];
+    const awaiting = f.status === "all" ? waitingOn(me, inScope, team.id) : [];
     const shelfTitle = me ? (me.level === 2 ? "Awaiting your final approval" : "Awaiting your approval") : "Awaiting approval";
     const projectName = (id) => (projects.find((p) => p.id === id) || {}).name || "Unsorted";
 
-    const card = (a, showProject = false) => `
-      <a class="card" href="#/asset/${esc(a.id)}">
-        <div class="thumb">${thumbHtml(a.current)}<span class="vtag">v${a.current_version}</span>${a.status === "approved" ? `<span class="check">${ICON.check}</span>` : ""}</div>
-        <div class="card-body">
-          ${showProject ? `<div class="card-eyebrow">${esc(projectName(a.project_id))}</div>` : ""}
-          <div class="card-title" title="${esc(a.title)}">${esc(a.title)}</div>
-          <div class="card-meta">${badge(a.status)}<span class="meta-r">${ICON.chat} ${a.comment_count} · ${esc(timeAgo(a.updated_at))}</span></div>
-        </div>
-      </a>`;
-
-    const title = cfg.SITE_TITLE || "Media Review";
     $("#app").innerHTML = `
-      <section class="hero">
-        <h1>${esc(title)}</h1>
-        <p>Review. Comment. Approve.</p>
+      <div class="crumbs"><a href="#/">${ICON.back} All teams</a></div>
+      <section class="hero hero-team">
+        <p class="eyebrow">Team</p>
+        <h1>${esc(team.name)}</h1>
+        <p>${assets.length} asset${assets.length === 1 ? "" : "s"}${projects.length ? ` · ${projects.length} project${projects.length === 1 ? "" : "s"}` : ""}</p>
       </section>
       ${awaiting.length ? `
         <section class="shelf">
           <div class="shelf-head"><span class="dot"></span><h2>${esc(shelfTitle)}</h2><span class="count">${awaiting.length}</span></div>
-          <div class="shelf-row">${awaiting.map((a) => card(a, true)).join("")}</div>
+          <div class="shelf-row">${awaiting.map((a) => assetCard(a, projectName(a.project_id))).join("")}</div>
         </section>` : ""}
       <div class="toolbar">
         <label class="search">${ICON.search}<input type="search" id="f-q" placeholder="Search" value="${esc(f.q)}" aria-label="Search titles"></label>
@@ -431,16 +521,16 @@
       ${groups.length ? groups.map((g) => `
         <section class="group">
           <div class="group-head"><h2>${esc(g.name)}</h2><span class="count">${g.items.length}</span></div>
-          <div class="grid">${g.items.map((a) => card(a)).join("")}</div>
+          <div class="grid">${g.items.map((a) => assetCard(a)).join("")}</div>
         </section>`).join("")
       : assets.length
         ? `<div class="empty"><h3>No matches</h3>Try a different search or filter.</div>`
-        : `<div class="empty"><h3>Nothing to review yet</h3><p>Upload the first asset to get started.</p><button class="btn btn-primary" id="empty-new">${ICON.plus} New asset</button></div>`}`;
+        : `<div class="empty"><h3>Nothing to review yet</h3><p>Upload ${esc(team.name)}'s first asset to get started.</p><button class="btn btn-primary" id="empty-new">${ICON.plus} New asset</button></div>`}`;
 
     const qEl = $("#f-q");
-    qEl.addEventListener("input", debounce(() => { f.q = qEl.value; renderGallery().then(() => { const el = $("#f-q"); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }); }, 250));
-    $("#f-project").addEventListener("change", (e) => { f.project = e.target.value; renderGallery(); });
-    $$(".segmented [data-status]").forEach((b) => b.addEventListener("click", () => { f.status = b.dataset.status; renderGallery(); }));
+    qEl.addEventListener("input", debounce(() => { f.q = qEl.value; renderGallery(slug).then(() => { const el = $("#f-q"); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }); }, 250));
+    $("#f-project").addEventListener("change", (e) => { f.project = e.target.value; renderGallery(slug); });
+    $$(".segmented [data-status]").forEach((b) => b.addEventListener("click", () => { f.status = b.dataset.status; renderGallery(slug); }));
     const en = $("#empty-new"); if (en) en.addEventListener("click", () => openNewAssetModal());
   }
 
@@ -455,8 +545,9 @@
   // ---------- detail ---------------------------------------------------
   async function renderDetail(id, keepSelection = false) {
     const data = await api.getAsset(id);
-    if (!data) { $("#app").innerHTML = `<div class="empty">This asset doesn't exist (it may have been deleted). <a href="#/">Back to gallery</a></div>`; return; }
-    state.projects = await api.listProjects();
+    if (!data) { $("#app").innerHTML = `<div class="empty">This asset doesn't exist (it may have been deleted). <a href="#/">See all teams</a></div>`; return; }
+    [state.projects, state.teams] = await Promise.all([api.listProjects(), api.listTeams()]);
+    state.team = teamById(data.asset.team_id);
     const prev = state.detail && state.detail.asset.id === id ? state.detail : null;
     state.detail = {
       ...data,
@@ -517,7 +608,10 @@
         <div class="step ${a.status === "approved" ? "done" : (a.status === "pending_final" ? "now" : "")}"><span class="n">${a.status === "approved" ? ICON.check : "2"}</span><div><b>Final approval</b><span>${esc(a.status === "approved" ? a.approved_by : "Level 2 approver")}</span></div></div>
       </div>`;
     let approverBtns = "";
-    if (approver) {
+    const otherTeam = approver && (approver.level || 1) === 1 && approver.team_id && approver.team_id !== a.team_id;
+    if (otherTeam) {
+      approverBtns = `<p class="wait-note">You approve for ${esc(approver.team_name || "another team")}. First approval here is by ${esc(teamName(a.team_id))}'s approver.</p>`;
+    } else if (approver) {
       const lvl = approver.level || 1;
       const changes = `<button class="btn btn-changes" data-act="changes_requested">Request changes</button>`;
       if (a.status === "approved") approverBtns = `<button class="btn" data-act="in_review">Reopen for review</button>`;
@@ -531,9 +625,9 @@
 
     $("#app").innerHTML = `
       <div class="${animate ? "fade-in" : ""}">
-      <div class="crumbs"><a href="#/">${ICON.back} Gallery</a></div>
+      <div class="crumbs"><a href="${state.team ? `#/t/${esc(state.team.slug)}` : "#/"}">${ICON.back} ${esc(state.team ? state.team.name : "All teams")}</a></div>
       <header class="detail-head">
-        <p class="eyebrow">${esc(project ? project.name : "Unsorted")}</p>
+        <p class="eyebrow">${esc(teamName(a.team_id))}${project ? " · " + esc(project.name) : ""}</p>
         <h1>${esc(a.title)}</h1>
         <div class="sub">${badge(a.status, true)}<span>Created by ${esc(a.created_by)} · ${esc(fullDate(a.created_at))}</span></div>
         ${a.description ? `<p class="desc">${esc(a.description)}</p>` : ""}
@@ -568,7 +662,7 @@
             <div class="actions">
               <button class="btn btn-primary" id="new-version-btn">${ICON.upload} Upload revised version</button>
               ${approver ? approverBtns : `<button class="btn" id="approver-login">Sign in to approve</button>`}
-              ${approver ? `<button class="btn-link small btn-danger" id="delete-asset" style="align-self:center;margin-top:2px">Delete asset</button>` : ""}
+              ${approver && !otherTeam ? `<button class="btn-link small btn-danger" id="delete-asset" style="align-self:center;margin-top:2px">Delete asset</button>` : ""}
             </div>
           </div>
           <div class="panel">
@@ -718,21 +812,32 @@
   }
 
   async function openNewAssetModal() {
-    if (!state.projects.length) state.projects = await api.listProjects();
-    const f = state.filters;
-    const preset = state.detail ? state.detail.asset.project_id : (f.project !== "all" && f.project !== "none" ? f.project : "");
+    if (!state.teams.length) state.teams = await api.listTeams();
+    state.projects = await api.listProjects();
+    if (!state.teams.length) { toast("No teams yet — run teams-setup.sql in Supabase first.", true); return; }
+    const f = state.filters; const me = store.approver;
+    const presetTeam = (state.detail && state.detail.asset.team_id) || (state.team && state.team.id) || (me && me.team_id) || "";
+    const presetProject = state.detail ? state.detail.asset.project_id : (state.team && f.project !== "all" && f.project !== "none" ? f.project : "");
+    const projectOptions = (teamId) => {
+      const ps = state.projects.filter((p) => p.team_id === teamId);
+      return `${ps.map((p) => `<option value="${esc(p.id)}" ${p.id === presetProject ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
+        <option value="" ${ps.length ? "" : "selected"}>— Unsorted —</option>
+        <option value="__new">＋ New project…</option>`;
+    };
     const modal = openModal(`
       <h2>New asset</h2>
       <p class="lead">Add something for the team to review.</p>
       <form>
-        <label class="field"><span>Project / section</span>
-          <select name="project">
-            ${state.projects.map((p) => `<option value="${esc(p.id)}" ${p.id === preset ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
-            <option value="" ${state.projects.length ? "" : "selected"}>— Unsorted —</option>
-            <option value="__new">＋ New project…</option>
+        <label class="field"><span>Team</span>
+          <select name="team" required>
+            ${presetTeam ? "" : `<option value="" selected disabled>Choose a team…</option>`}
+            ${state.teams.map((t) => `<option value="${esc(t.id)}" ${t.id === presetTeam ? "selected" : ""}>${esc(t.name)}</option>`).join("")}
           </select>
         </label>
-        <label class="field" data-newproj hidden><span>New project name</span><input type="text" name="newproject" maxlength="120" placeholder="e.g. Section 6 – Shastra"></label>
+        <label class="field"><span>Project / section</span>
+          <select name="project">${presetTeam ? projectOptions(presetTeam) : `<option value="">— Choose a team first —</option>`}</select>
+        </label>
+        <label class="field" data-newproj hidden><span>New project name</span><input type="text" name="newproject" maxlength="120" placeholder="e.g. Entrance signage"></label>
         <label class="field"><span>Title</span><input type="text" name="title" maxlength="160" required></label>
         <label class="field"><span>Description <span class="muted" style="font-weight:400">(optional)</span></span><textarea name="description" maxlength="2000" style="min-height:60px"></textarea></label>
         ${sourceFieldsHtml()}
@@ -740,6 +845,11 @@
         <div class="error" data-err></div>
         <div class="footer"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn btn-primary">Upload</button></div>
       </form>`);
+    const teamSel = $('select[name="team"]', modal);
+    teamSel.addEventListener("change", () => {
+      $('select[name="project"]', modal).innerHTML = projectOptions(teamSel.value);
+      $("[data-newproj]", modal).hidden = true;
+    });
     wireSource(modal);
     const sel = $('select[name="project"]', modal);
     sel.addEventListener("change", () => { $("[data-newproj]", modal).hidden = sel.value !== "__new"; });
@@ -759,17 +869,19 @@
       try {
         const name = String(fd.get("name")).trim(), title = String(fd.get("title")).trim();
         if (!title || !name) throw new Error("Title and your name are required.");
+        const team_id = fd.get("team") || null;
+        if (!team_id) throw new Error("Choose a team.");
         let project_id = fd.get("project") || null;
         if (project_id === "__new") {
           const pn = String(fd.get("newproject") || "").trim();
           if (!pn) throw new Error("Enter a name for the new project.");
-          const existing = state.projects.find((p) => p.name.toLowerCase() === pn.toLowerCase());
-          project_id = existing ? existing.id : (await api.createProject(pn)).id;
+          const existing = state.projects.find((p) => p.team_id === team_id && p.name.toLowerCase() === pn.toLowerCase());
+          project_id = existing ? existing.id : (await api.createProject(pn, team_id)).id;
         }
         const src = await resolveSource(modal, setStatus);
         setStatus("Saving…");
         store.name = name;
-        const id = await api.createAsset({ project_id, title, description: fd.get("description"), name, notes: "", ...src });
+        const id = await api.createAsset({ team_id, project_id, title, description: fd.get("description"), name, notes: "", ...src });
         closeModal(); toast("Asset uploaded");
         location.hash = `#/asset/${id}`;
       } catch (ex) { err.style.color = ""; err.textContent = errMsg(ex); btn.disabled = false; }
@@ -832,8 +944,10 @@
         const name = String(fd.get("name")).trim(), pass = String(fd.get("pass"));
         const info = await api.verifyApprover(name, pass);
         const who = (info && info.name) || name, level = (info && info.level) || 1;
-        store.approver = { name: who, pass, level };
-        closeModal(); updateHeader(); toast(`Signed in as ${level === 2 ? "final" : "first"} approver: ${who}`);
+        const team_id = (info && info.team_id) || null, team_name = (info && info.team_name) || null;
+        store.approver = { name: who, pass, level, team_id, team_name };
+        closeModal(); updateHeader();
+        toast(level === 2 ? `Signed in as final approver: ${who}` : `Signed in as ${team_name ? team_name + " " : ""}approver: ${who}`);
         onDone && onDone();
       } catch (ex) { err.textContent = errMsg(ex); btn.disabled = false; }
     });
@@ -878,7 +992,7 @@
   function deleteAsset(a) {
     withApprover(async (ap) => {
       if (!confirm(`Delete “${a.title}” and all its versions and comments? This can't be undone.`)) return;
-      try { await api.deleteAsset({ asset_id: a.id, approver: ap.name, passcode: ap.pass }); toast("Asset deleted"); location.hash = "#/"; }
+      try { await api.deleteAsset({ asset_id: a.id, approver: ap.name, passcode: ap.pass }); toast("Asset deleted"); location.hash = state.team ? `#/t/${state.team.slug}` : "#/"; }
       catch (ex) { toast(errMsg(ex), true); }
     });
   }
@@ -892,23 +1006,25 @@
 
   // ---------- header + routing ----------------------------------------
   function updateHeader() {
-    if (store.approver && !store.approver.level) store.approver = null;
+    if (store.approver && (!store.approver.level || !("team_id" in store.approver))) store.approver = null;
     const ap = store.approver; const flag = $("#approver-flag");
     if (ap) {
       flag.hidden = false;
-      flag.innerHTML = `${(ap.level || 1) === 2 ? "Final approver" : "Approver"}: ${esc(ap.name)}<button id="ap-out">sign out</button>`;
+      flag.innerHTML = `${(ap.level || 1) === 2 ? "Final approver" : `${ap.team_name ? esc(ap.team_name) + " approver" : "Approver"}`}: ${esc(ap.name)}<button id="ap-out">sign out</button>`;
       $("#ap-out").addEventListener("click", () => { store.approver = null; updateHeader(); route(); });
     } else flag.hidden = true;
   }
 
   async function route() {
     const m = location.hash.match(/^#\/asset\/([\w-]+)/);
+    const t = location.hash.match(/^#\/t\/([a-z0-9-]+)/);
     try {
       if (m) await renderDetail(m[1]);
-      else await renderGallery();
+      else if (t) await renderGallery(t[1]);
+      else await renderHome();
     } catch (ex) {
       console.error(ex);
-      $("#app").innerHTML = `<div class="empty">Something went wrong loading this page.<br><span class="small">${esc(errMsg(ex))}</span><br><br><a href="#/">Back to gallery</a></div>`;
+      $("#app").innerHTML = `<div class="empty">Something went wrong loading this page.<br><span class="small">${esc(errMsg(ex))}</span><br><br><a href="#/">See all teams</a></div>`;
     }
   }
 
