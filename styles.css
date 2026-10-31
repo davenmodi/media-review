@@ -476,3 +476,4 @@ input[type=number]:focus { outline: none; border-color: var(--accent); box-shado
 @media (min-width: 641px) and (max-width: 899px) {
   .team-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.edit-btn { margin-top: 14px; }

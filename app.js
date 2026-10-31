@@ -180,6 +180,12 @@
           p_print_length: p.print_length, p_print_width: p.print_width, p_print_unit: p.print_unit,
         }));
       },
+      async updateAssetDetails(p) {
+        ok(await sb.rpc("update_asset_details", {
+          p_asset_id: p.asset_id, p_editor: p.name, p_title: p.title, p_description: p.description, p_project_id: p.project_id,
+          p_print_length: p.print_length, p_print_width: p.print_width, p_print_unit: p.print_unit,
+        }));
+      },
       async addComment(p) {
         ok(await sb.from("comments").insert({ asset_id: p.asset_id, version_number: p.version_number, author: p.name.trim(), body: p.body.trim() }));
       },
@@ -301,6 +307,24 @@
         Object.assign(a, { current_version: n, status: "ready_for_approval", first_approved_by: null, first_approved_at: null, approved_version: null, approved_by: null, approved_at: null, updated_at: now() });
         event(a.id, n, p.name.trim(), `Uploaded v${n} — ready for approval`);
         save(); return delay(n);
+      },
+      async updateAssetDetails(p) {
+        const a = asset(p.asset_id);
+        const v = db.versions.find((x) => x.asset_id === a.id && x.version_number === a.current_version);
+        const pname = (id) => (db.projects.find((x) => x.id === id) || {}).name || "Unsorted";
+        if (!p.name.trim()) throw new Error("Your name is required");
+        if (!p.title.trim()) throw new Error("Title is required");
+        const ch = [];
+        if (p.title.trim() !== a.title) ch.push(`title → “${p.title.trim()}”`);
+        if ((p.description || "").trim() !== (a.description || "")) ch.push("description");
+        if ((p.project_id || null) !== (a.project_id || null)) ch.push(`project → ${pname(p.project_id)}`);
+        if ((p.print_length || null) !== (v.print_length || null) || (p.print_width || null) !== (v.print_width || null) || (p.print_unit || null) !== (v.print_unit || null))
+          ch.push(`print size (v${a.current_version}) → ${p.print_length ? `${+p.print_length} × ${+p.print_width} ${p.print_unit}` : "digital only"}`);
+        if (!ch.length) return delay();
+        Object.assign(a, { title: p.title.trim(), description: (p.description || "").trim(), project_id: p.project_id || null, updated_at: now() });
+        Object.assign(v, { print_length: p.print_length, print_width: p.print_width, print_unit: p.print_unit });
+        event(a.id, a.current_version, p.name.trim(), "✎ Edited " + ch.join(", "));
+        save(); return delay();
       },
       async addComment(p) {
         db.comments.push({ id: uid(), asset_id: p.asset_id, version_number: p.version_number, author: p.name.trim(), body: p.body.trim(), kind: "comment", created_at: now() });
@@ -713,6 +737,7 @@
         <h1>${esc(a.title)}</h1>
         <div class="sub">${badge(a.status, true)}${(() => { const cv = d.versions.find((x) => x.version_number === a.current_version); return cv ? `<span class="size-pill">${ICON.ruler} ${cv.print_length ? "Print " + esc(fmtPrint(cv)) : "Digital only"}</span>` : ""; })()}<span>Created by ${esc(a.created_by)} · ${esc(fullDate(a.created_at))}</span></div>
         ${a.description ? `<p class="desc">${esc(a.description)}</p>` : ""}
+        <button class="btn btn-sm edit-btn" id="edit-details">${ICON.pencil} Edit details</button>
       </header>
       <div class="detail-layout">
         <div class="panel stage">
@@ -777,6 +802,7 @@
     const range = $(".cmp input[type=range]");
     if (range) range.addEventListener("input", () => range.parentElement.style.setProperty("--pos", range.value + "%"));
     $("#new-version-btn").addEventListener("click", () => openVersionModal(a));
+    $("#edit-details").addEventListener("click", () => openEditModal(a));
     const login = $("#approver-login"); if (login) login.addEventListener("click", () => openApproverLogin(() => drawDetail()));
     $$("[data-act]").forEach((b) => b.addEventListener("click", () => openStatusModal(a, b.dataset.act)));
     const del = $("#delete-asset"); if (del) del.addEventListener("click", () => deleteAsset(a));
@@ -1002,6 +1028,54 @@
         closeModal(); toast("Asset uploaded");
         location.hash = `#/asset/${id}`;
       } catch (ex) { err.style.color = ""; err.textContent = errMsg(ex); btn.disabled = false; }
+    });
+  }
+
+  function openEditModal(a) {
+    const cur = state.detail.versions.find((x) => x.version_number === a.current_version);
+    const projects = state.projects.filter((p) => p.team_id === a.team_id);
+    const modal = openModal(`
+      <h2>Edit details</h2>
+      <p class="lead">Changes are recorded in the comment history with your name.</p>
+      <form>
+        <label class="field"><span>Title</span><input type="text" name="title" maxlength="160" required value="${esc(a.title)}"></label>
+        <label class="field"><span>Description <span class="muted" style="font-weight:400">(optional)</span></span><textarea name="description" maxlength="2000" style="min-height:70px">${esc(a.description || "")}</textarea></label>
+        <label class="field"><span>Project / section <span class="muted" style="font-weight:400">(${esc(teamName(a.team_id))})</span></span>
+          <select name="project">
+            ${projects.map((p) => `<option value="${esc(p.id)}" ${p.id === a.project_id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
+            <option value="" ${a.project_id ? "" : "selected"}>— Unsorted —</option>
+            <option value="__new">＋ New project…</option>
+          </select>
+        </label>
+        <label class="field" data-newproj hidden><span>New project name</span><input type="text" name="newproject" maxlength="120"></label>
+        ${cur ? sizeFieldsHtml({ ...cur, version_number: cur.print_length || !["video", "link"].includes(cur.media_type) ? 0 : 1 }).replace("Print size (Length × Width)", `Print size of v${a.current_version} (Length × Width)`) : ""}
+        <label class="field"><span>Your name</span><input type="text" name="name" maxlength="80" required value="${esc(store.name)}"></label>
+        <div class="error" data-err></div>
+        <div class="footer"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn btn-primary">Save</button></div>
+      </form>`);
+    if (cur) wireSize(modal);
+    const sel = $('select[name="project"]', modal);
+    sel.addEventListener("change", () => { $("[data-newproj]", modal).hidden = sel.value !== "__new"; });
+    $("form", modal).addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target); const btn = $('button[type=submit]', modal); const err = $("[data-err]", modal);
+      err.textContent = ""; btn.disabled = true;
+      try {
+        const name = String(fd.get("name")).trim(), title = String(fd.get("title")).trim();
+        if (!title || !name) throw new Error("Title and your name are required.");
+        const size = cur ? readSize(modal) : { print_length: null, print_width: null, print_unit: null };
+        let project_id = fd.get("project") || null;
+        if (project_id === "__new") {
+          const pn = String(fd.get("newproject") || "").trim();
+          if (!pn) throw new Error("Enter a name for the new project.");
+          const existing = projects.find((p) => p.name.toLowerCase() === pn.toLowerCase());
+          project_id = existing ? existing.id : (await api.createProject(pn, a.team_id)).id;
+        }
+        store.name = name;
+        await api.updateAssetDetails({ asset_id: a.id, name, title, description: String(fd.get("description") || ""), project_id, ...size });
+        closeModal(); toast("Details saved");
+        await renderDetail(a.id, true);
+      } catch (ex) { err.textContent = errMsg(ex); btn.disabled = false; }
     });
   }
 
