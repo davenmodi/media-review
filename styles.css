@@ -447,3 +447,32 @@ label.check input { width: 16px; height: 16px; accent-color: var(--accent); marg
 input[type=number] { width: 100%; font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--hairline); border-radius: 12px; padding: 10px 14px; -moz-appearance: textfield; }
 input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 input[type=number]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); }
+
+/* ---------- Large screens: let the layout grow with the window ---------- */
+@media (min-width: 1280px) {
+  :root { --page: min(1720px, 100vw - 2 * clamp(22px, 4vw, 72px)); }
+  main { max-width: calc(var(--page) + 2 * clamp(22px, 4vw, 72px)); padding-left: clamp(22px, 4vw, 72px); padding-right: clamp(22px, 4vw, 72px); }
+  .topbar { padding: 0 max(clamp(22px, 4vw, 72px), calc((100vw - var(--page)) / 2)); }
+  .hero h1 { font-size: clamp(48px, 3.4vw, 72px); }
+  .hero p { font-size: clamp(21px, 1.4vw, 28px); }
+  .team-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(24px, 1.8vw, 36px); }
+  .tile-body h3 { font-size: clamp(21px, 1.4vw, 28px); }
+  .tile-sub, .tile-stats .status { font-size: clamp(13px, 0.8vw, 16px); }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(clamp(240px, 15vw, 340px), 1fr)); gap: clamp(24px, 1.6vw, 32px); }
+  .shelf-row { grid-auto-columns: minmax(clamp(240px, 15vw, 340px), clamp(280px, 17vw, 380px)); }
+  .card-title { font-size: clamp(16px, 0.95vw, 19px); }
+  .detail-head h1 { font-size: clamp(40px, 2.8vw, 60px); }
+  .detail-layout { grid-template-columns: minmax(0, 1fr) clamp(360px, 24vw, 460px); gap: clamp(24px, 1.8vw, 36px); }
+  .viewer { height: 72vh; max-height: 1100px; }
+  .side { top: 76px; }
+}
+@media (min-width: 1800px) {
+  body { font-size: 16px; }
+  .msg-body { font-size: 15px; }
+}
+@media (min-width: 900px) and (max-width: 1279px) {
+  .team-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 641px) and (max-width: 899px) {
+  .team-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
