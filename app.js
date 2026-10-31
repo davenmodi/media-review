@@ -366,7 +366,7 @@
     if (yt) return `<img loading="lazy" src="https://img.youtube.com/vi/${esc(yt)}/hqdefault.jpg" alt="">`;
     const dr = driveId(v.url);
     if (dr) return `<img loading="lazy" src="https://drive.google.com/thumbnail?id=${esc(dr)}&sz=w600" alt="" onerror="this.outerHTML='<div class=&quot;ph&quot;><span>DRIVE</span></div>'">`;
-    if (v.media_type === "pdf") return ph(ICON.doc, "PDF");
+    if (v.media_type === "pdf") return `<div class="pdf-thumb" data-pdf-thumb="${esc(url)}">${ph(ICON.doc, "PDF")}</div>`;
     if (v.media_type === "link") return ph(ICON.link, "LINK");
     return ph(ICON.doc, (v.file_name || "FILE").split(".").pop().toUpperCase());
   }
@@ -376,13 +376,91 @@
     const url = safeUrl(v.url);
     if (v.media_type === "image") return `<img src="${esc(url)}" alt="" data-zoom>`;
     if (v.media_type === "video") return `<video src="${esc(url)}" controls playsinline preload="metadata"></video>`;
-    if (v.media_type === "pdf" && !driveId(v.url)) return `<iframe src="${esc(url)}" title="PDF preview"></iframe>`;
+    if (v.media_type === "pdf" && !driveId(v.url)) return `<div class="pdf-view" data-pdf="${esc(url)}"><canvas aria-label="PDF preview"></canvas><div class="pdf-nav" hidden><button class="btn btn-sm" data-pg="-1" aria-label="Previous page">‹</button><span></span><button class="btn btn-sm" data-pg="1" aria-label="Next page">›</button></div></div>`;
     const yt = youtubeId(v.url);
     if (yt) return `<iframe src="https://www.youtube.com/embed/${esc(yt)}" allowfullscreen title="Video"></iframe>`;
     const dr = driveId(v.url);
     if (dr) return `<iframe src="https://drive.google.com/file/d/${esc(dr)}/preview" allowfullscreen title="Drive preview"></iframe>`;
     return `<div class="fallback">${ICON.link}<p>This item can't be previewed here.</p><a class="btn btn-sm" href="${esc(url)}" target="_blank" rel="noopener">Open link ${ICON.external}</a></div>`;
   }
+
+  // ---------- PDF rendering (PDF.js) -----------------------------------
+  // Browsers' built-in PDF viewers zoom a page to the box width, which crops tall
+  // pieces like scrolls. We render pages ourselves, scaled to fit, keeping aspect ratio.
+  const PDFJS = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/";
+  let pdfjsP = null;
+  const pdfLib = () => (pdfjsP ||= import(PDFJS + "pdf.min.mjs").then((m) => { m.GlobalWorkerOptions.workerSrc = PDFJS + "pdf.worker.min.mjs"; return m; }));
+  const pdfDocs = new Map(), pdfThumbs = new Map();
+  function getPdf(url) {
+    if (!pdfDocs.has(url)) {
+      const pr = pdfLib().then((lib) => lib.getDocument({ url }).promise);
+      pr.catch(() => pdfDocs.delete(url));
+      pdfDocs.set(url, pr);
+    }
+    return pdfDocs.get(url);
+  }
+  async function renderPdfPage(doc, n, maxW, maxH) {
+    const page = await doc.getPage(n);
+    const base = page.getViewport({ scale: 1 });
+    const fit = Math.min(maxW / base.width, maxH / base.height);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    const vp = page.getViewport({ scale: fit * dpr });
+    const c = document.createElement("canvas");
+    c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+    c.style.width = Math.floor(base.width * fit) + "px"; c.style.height = Math.floor(base.height * fit) + "px";
+    await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+    return c;
+  }
+  function pdfThumb(url) {
+    if (!pdfThumbs.has(url)) {
+      const pr = getPdf(url).then((doc) => renderPdfPage(doc, 1, 360, 360)).then((c) => c.toDataURL("image/jpeg", 0.85));
+      pr.catch(() => pdfThumbs.delete(url));
+      pdfThumbs.set(url, pr);
+    }
+    return pdfThumbs.get(url);
+  }
+  async function hydratePdfView(el) {
+    el.dataset.ready = "1";
+    const url = el.dataset.pdf, nav = $(".pdf-nav", el), label = $("span", nav);
+    let doc, n = 1, busy = false;
+    const draw = async () => {
+      if (busy) return; busy = true;
+      try {
+        const box = el.getBoundingClientRect();
+        const c = await renderPdfPage(doc, n, Math.max(100, box.width), Math.max(100, box.height - (doc.numPages > 1 ? 48 : 0)));
+        c.setAttribute("aria-label", `Page ${n} of ${doc.numPages}`);
+        c.addEventListener("click", () => openPdfLightbox(doc, n));
+        $("canvas", el).replaceWith(c);
+        label.textContent = `Page ${n} of ${doc.numPages}`;
+        nav.hidden = doc.numPages < 2;
+        $('[data-pg="-1"]', nav).disabled = n <= 1;
+        $('[data-pg="1"]', nav).disabled = n >= doc.numPages;
+      } finally { busy = false; }
+    };
+    $$("[data-pg]", nav).forEach((b) => b.addEventListener("click", () => { n = Math.min(doc.numPages, Math.max(1, n + +b.dataset.pg)); draw(); }));
+    try { doc = await getPdf(url); await draw(); el._redraw = draw; }
+    catch (ex) {
+      console.warn("PDF.js failed, using browser viewer", ex);
+      el.outerHTML = `<iframe src="${esc(url)}" title="PDF preview"></iframe>`;
+    }
+  }
+  async function openPdfLightbox(doc, n) {
+    const lb = document.createElement("div");
+    lb.className = "lightbox"; lb.innerHTML = `<div class="muted">Loading…</div>`;
+    lb.addEventListener("click", () => lb.remove());
+    document.body.appendChild(lb);
+    const c = await renderPdfPage(doc, n, window.innerWidth * 0.94, window.innerHeight * 0.94);
+    c.className = "lb-canvas"; lb.innerHTML = ""; lb.appendChild(c);
+  }
+  function hydratePdfs(root = document) {
+    $$("[data-pdf]:not([data-ready])", root).forEach(hydratePdfView);
+    $$("[data-pdf-thumb]:not([data-ready])", root).forEach((el) => {
+      el.dataset.ready = "1";
+      pdfThumb(el.dataset.pdfThumb).then((src) => { el.innerHTML = `<img src="${src}" alt="">`; }).catch(() => {});
+    });
+  }
+  // Re-fit open PDF pages when the window is resized.
+  window.addEventListener("resize", debounce(() => $$("[data-pdf][data-ready]").forEach((el) => el._redraw && el._redraw()), 250));
 
   // ---------- shared card ----------------------------------------------
   function assetCard(a, eyebrow = "") {
@@ -578,7 +656,7 @@
     let stage;
     if (d.compare) stage = compareHtml(byNum(d.cmpA), v);
     else stage = viewerHtml(v);
-    const framed = !d.compare && v && (v.media_type === "pdf" || youtubeId(v.url) || driveId(v.url));
+    const framed = !d.compare && v && (youtubeId(v.url) || driveId(v.url));
 
     // ----- comments
     const comments = d.comments.filter((c) => d.commentScope === "all" || c.version_number === d.selected);
@@ -1037,6 +1115,11 @@
     try { api = DEMO ? demoBackend() : await supabaseBackend(); }
     catch (ex) { $("#app").innerHTML = `<div class="empty">Couldn't connect to the database.<br><span class="small">${esc(errMsg(ex))}</span></div>`; return; }
     window.addEventListener("hashchange", () => { window.scrollTo(0, 0); route(); });
+    let pdfQueued = false;
+    new MutationObserver(() => {
+      if (pdfQueued) return; pdfQueued = true;
+      requestAnimationFrame(() => { pdfQueued = false; hydratePdfs($("#app")); });
+    }).observe($("#app"), { childList: true, subtree: true });
     route();
   }
 

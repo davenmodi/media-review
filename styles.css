@@ -425,3 +425,12 @@ label.field > span, .field-label { display: block; font-size: 13px; font-weight:
 .hero-team { padding-top: 14px; }
 .hero-team .eyebrow { margin-bottom: 6px; }
 @media (max-width: 640px) { .team-grid { grid-template-columns: 1fr; gap: 16px; } }
+
+/* ---------- PDF (rendered with PDF.js, fit to box) ---------- */
+.pdf-view { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 0; }
+.pdf-view canvas { display: block; background: #fff; border-radius: 4px; box-shadow: 0 4px 24px rgba(0,0,0,.14); cursor: zoom-in; max-width: 100%; max-height: 100%; }
+.pdf-nav { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-2); flex: none; }
+.pdf-nav .btn { min-width: 36px; padding: 4px 10px; font-size: 16px; }
+.pdf-thumb { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.pdf-thumb img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 3px; box-shadow: 0 1px 4px rgba(0,0,0,.1); background: #fff; }
+.lightbox .lb-canvas { max-width: 94vw; max-height: 94vh; background: #fff; border-radius: 6px; }
