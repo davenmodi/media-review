@@ -39,6 +39,7 @@
     link: svg('<path d="M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>', 'stroke-width="1.5"'),
     eye: svg('<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
     clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+    ruler: svg('<path d="M3 17L17 3l4 4L7 21z"/><path d="M7 13l2 2M10 10l2 2M13 7l2 2"/>', 'stroke-width="1.7"'),
     pencil: svg('<path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'),
   };
 
@@ -169,12 +170,14 @@
         return ok(await sb.rpc("create_asset", {
           p_team_id: p.team_id, p_project_id: p.project_id, p_title: p.title, p_description: p.description, p_created_by: p.name,
           p_media_type: p.media_type, p_url: p.url, p_storage_path: p.storage_path, p_file_name: p.file_name, p_notes: p.notes,
+          p_print_length: p.print_length, p_print_width: p.print_width, p_print_unit: p.print_unit,
         }));
       },
       async addVersion(p) {
         return ok(await sb.rpc("add_version", {
           p_asset_id: p.asset_id, p_uploaded_by: p.name, p_media_type: p.media_type, p_url: p.url,
           p_storage_path: p.storage_path, p_file_name: p.file_name, p_notes: p.notes,
+          p_print_length: p.print_length, p_print_width: p.print_width, p_print_unit: p.print_unit,
         }));
       },
       async addComment(p) {
@@ -225,7 +228,7 @@
         ],
         versions: [
           { id: uid(), asset_id: a1, version_number: 1, media_type: "image", url: svg("#f1e3c6", "#7a4a00", "Banner v1"), uploaded_by: "Daven", notes: "First draft", created_at: ago(50) },
-          { id: uid(), asset_id: a1, version_number: 2, media_type: "image", url: svg("#ffe1b3", "#8a3b00", "Banner v2"), uploaded_by: "Daven", notes: "Bigger title, warmer colours per feedback", created_at: ago(3) },
+          { id: uid(), asset_id: a1, version_number: 2, media_type: "image", url: svg("#ffe1b3", "#8a3b00", "Banner v2"), uploaded_by: "Daven", notes: "Bigger title, warmer colours per feedback", print_length: 72, print_width: 36, print_unit: "in", created_at: ago(3) },
           { id: uid(), asset_id: a2, version_number: 1, media_type: "image", url: svg("#dfe8ff", "#1d3a8a", "Timeline"), uploaded_by: "Daven", notes: "", created_at: ago(30) },
           { id: uid(), asset_id: a3, version_number: 1, media_type: "image", url: svg("#dff3e6", "#1e6b3c", "Teaser"), uploaded_by: "Daven", notes: "", created_at: ago(40) },
           { id: uid(), asset_id: a4, version_number: 1, media_type: "image", url: svg("#efe3ff", "#5b2a86", "Signage"), uploaded_by: "Riya", notes: "", created_at: ago(20) },
@@ -288,13 +291,13 @@
         const id = uid(), t = now();
         if (!p.team_id) throw new Error("Choose a team");
         db.assets.push({ id, team_id: p.team_id, project_id: p.project_id, title: p.title.trim(), description: (p.description || "").trim(), status: "in_review", current_version: 1, created_by: p.name.trim(), created_at: t, updated_at: t });
-        db.versions.push({ id: uid(), asset_id: id, version_number: 1, media_type: p.media_type, url: p.url, file_name: p.file_name, notes: (p.notes || "").trim(), uploaded_by: p.name.trim(), created_at: t });
+        db.versions.push({ id: uid(), asset_id: id, version_number: 1, media_type: p.media_type, url: p.url, file_name: p.file_name, notes: (p.notes || "").trim(), print_length: p.print_length, print_width: p.print_width, print_unit: p.print_unit, uploaded_by: p.name.trim(), created_at: t });
         event(id, 1, p.name.trim(), "Uploaded v1");
         save(); return delay(id);
       },
       async addVersion(p) {
         const a = asset(p.asset_id); const n = a.current_version + 1;
-        db.versions.push({ id: uid(), asset_id: a.id, version_number: n, media_type: p.media_type, url: p.url, file_name: p.file_name, notes: (p.notes || "").trim(), uploaded_by: p.name.trim(), created_at: now() });
+        db.versions.push({ id: uid(), asset_id: a.id, version_number: n, media_type: p.media_type, url: p.url, file_name: p.file_name, notes: (p.notes || "").trim(), print_length: p.print_length, print_width: p.print_width, print_unit: p.print_unit, uploaded_by: p.name.trim(), created_at: now() });
         Object.assign(a, { current_version: n, status: "ready_for_approval", first_approved_by: null, first_approved_at: null, approved_version: null, approved_by: null, approved_at: null, updated_at: now() });
         event(a.id, n, p.name.trim(), `Uploaded v${n} — ready for approval`);
         save(); return delay(n);
@@ -470,6 +473,7 @@
         <div class="card-body">
           ${eyebrow ? `<div class="card-eyebrow">${esc(eyebrow)}</div>` : ""}
           <div class="card-title" title="${esc(a.title)}">${esc(a.title)}</div>
+          ${fmtPrint(a.current) ? `<div class="card-size">${ICON.ruler} ${esc(fmtPrint(a.current))}</div>` : ""}
           <div class="card-meta">${badge(a.status)}<span class="meta-r">${ICON.chat} ${a.comment_count} · ${esc(timeAgo(a.updated_at))}</span></div>
         </div>
       </a>`;
@@ -707,7 +711,7 @@
       <header class="detail-head">
         <p class="eyebrow">${esc(teamName(a.team_id))}${project ? " · " + esc(project.name) : ""}</p>
         <h1>${esc(a.title)}</h1>
-        <div class="sub">${badge(a.status, true)}<span>Created by ${esc(a.created_by)} · ${esc(fullDate(a.created_at))}</span></div>
+        <div class="sub">${badge(a.status, true)}${(() => { const cv = d.versions.find((x) => x.version_number === a.current_version); return cv ? `<span class="size-pill">${ICON.ruler} ${cv.print_length ? "Print " + esc(fmtPrint(cv)) : "Digital only"}</span>` : ""; })()}<span>Created by ${esc(a.created_by)} · ${esc(fullDate(a.created_at))}</span></div>
         ${a.description ? `<p class="desc">${esc(a.description)}</p>` : ""}
       </header>
       <div class="detail-layout">
@@ -722,7 +726,7 @@
           </div>
           ${v ? `<div class="vinfo">
             <div class="line">
-              <span>${d.compare ? `Comparing <b>v${d.cmpA}</b> with <b>v${v.version_number}</b>` : `<b>v${v.version_number}</b> · ${esc(v.uploaded_by)} · ${esc(fullDate(v.created_at))}${isCurrent ? "" : " · Older version"}`}</span>
+              <span>${d.compare ? `Comparing <b>v${d.cmpA}</b> with <b>v${v.version_number}</b>` : `<b>v${v.version_number}</b> · ${esc(v.uploaded_by)} · ${esc(fullDate(v.created_at))}${fmtPrint(v) ? ` · <b>${esc(fmtPrint(v))}</b>` : ""}${isCurrent ? "" : " · Older version"}`}</span>
               <span class="tools">
                 ${d.compare ? `<select id="cmp-a" aria-label="Compare with">${d.versions.filter((x) => x.version_number !== d.selected).map((x) => `<option value="${x.version_number}" ${x.version_number === d.cmpA ? "selected" : ""}>v${x.version_number}</option>`).join("")}</select>` : ""}
                 ${canCompare ? `<button class="btn btn-sm" id="cmp-toggle">${ICON.compare} ${d.compare ? "Done" : "Compare"}</button>` : ""}
@@ -845,6 +849,38 @@
     closeModal();
   });
 
+  // ---------- print size (L × W) -------------------------------------
+  const UNITS = ["in", "ft", "cm", "mm"];
+  const num = (x) => String(+(+x).toFixed(2));
+  const fmtPrint = (v) => v && v.print_length && v.print_width ? `${num(v.print_length)} × ${num(v.print_width)} ${v.print_unit}` : "";
+  const sizeFieldsHtml = (prev) => {
+    const digital = prev && !prev.print_length && prev.version_number; // previous version was marked digital-only
+    const unit = (prev && prev.print_unit) || (() => { try { return localStorage.getItem("mr_unit"); } catch { return null; } })() || "in";
+    return `
+    <div class="field size-field">
+      <span class="field-label">Print size (Length × Width)</span>
+      <div class="size-row">
+        <input type="number" name="print_l" min="0" step="any" inputmode="decimal" placeholder="Length" aria-label="Length" value="${prev && prev.print_length ? esc(num(prev.print_length)) : ""}" ${digital ? "disabled" : ""}>
+        <span class="x">×</span>
+        <input type="number" name="print_w" min="0" step="any" inputmode="decimal" placeholder="Width" aria-label="Width" value="${prev && prev.print_width ? esc(num(prev.print_width)) : ""}" ${digital ? "disabled" : ""}>
+        <select name="print_unit" aria-label="Unit" ${digital ? "disabled" : ""}>${UNITS.map((u) => `<option ${u === unit ? "selected" : ""}>${u}</option>`).join("")}</select>
+      </div>
+      <label class="check"><input type="checkbox" name="no_print" ${digital ? "checked" : ""}> Digital only (not printed)</label>
+    </div>`;
+  };
+  function wireSize(modal) {
+    const cb = $('input[name="no_print"]', modal);
+    cb.addEventListener("change", () => $$(".size-row input, .size-row select", modal).forEach((el) => (el.disabled = cb.checked)));
+  }
+  function readSize(modal) {
+    if ($('input[name="no_print"]', modal).checked) return { print_length: null, print_width: null, print_unit: null };
+    const l = parseFloat($('input[name="print_l"]', modal).value), w = parseFloat($('input[name="print_w"]', modal).value);
+    const u = $('select[name="print_unit"]', modal).value;
+    if (!(l > 0) || !(w > 0)) throw new Error("Enter the print size (Length × Width), or tick “Digital only”.");
+    try { localStorage.setItem("mr_unit", u); } catch {}
+    return { print_length: l, print_width: w, print_unit: u };
+  }
+
   // Shared "file or link" source picker
   const sourceFieldsHtml = () => `
     <div class="field" style="margin-bottom:14px">
@@ -919,10 +955,12 @@
         <label class="field"><span>Title</span><input type="text" name="title" maxlength="160" required></label>
         <label class="field"><span>Description <span class="muted" style="font-weight:400">(optional)</span></span><textarea name="description" maxlength="2000" style="min-height:60px"></textarea></label>
         ${sourceFieldsHtml()}
+        ${sizeFieldsHtml()}
         <label class="field"><span>Your name</span><input type="text" name="name" maxlength="80" required value="${esc(store.name)}"></label>
         <div class="error" data-err></div>
         <div class="footer"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn btn-primary">Upload</button></div>
       </form>`);
+    wireSize(modal);
     const teamSel = $('select[name="team"]', modal);
     teamSel.addEventListener("change", () => {
       $('select[name="project"]', modal).innerHTML = projectOptions(teamSel.value);
@@ -949,6 +987,7 @@
         if (!title || !name) throw new Error("Title and your name are required.");
         const team_id = fd.get("team") || null;
         if (!team_id) throw new Error("Choose a team.");
+        const size = readSize(modal);
         let project_id = fd.get("project") || null;
         if (project_id === "__new") {
           const pn = String(fd.get("newproject") || "").trim();
@@ -959,7 +998,7 @@
         const src = await resolveSource(modal, setStatus);
         setStatus("Saving…");
         store.name = name;
-        const id = await api.createAsset({ team_id, project_id, title, description: fd.get("description"), name, notes: "", ...src });
+        const id = await api.createAsset({ team_id, project_id, title, description: fd.get("description"), name, notes: "", ...size, ...src });
         closeModal(); toast("Asset uploaded");
         location.hash = `#/asset/${id}`;
       } catch (ex) { err.style.color = ""; err.textContent = errMsg(ex); btn.disabled = false; }
@@ -968,17 +1007,20 @@
 
   function openVersionModal(a) {
     const next = a.current_version + 1;
+    const cur = state.detail && state.detail.versions.find((x) => x.version_number === a.current_version);
     const modal = openModal(`
       <h2>Upload v${next} of “${esc(a.title)}”</h2>
       <p class="lead">The new version will be marked <b>Ready for Approval</b>.${a.status === "approved" ? " This asset is currently approved — uploading will reopen it." : ""}</p>
       <form>
         ${sourceFieldsHtml()}
+        ${sizeFieldsHtml(cur)}
         <label class="field"><span>What changed?</span><textarea name="notes" maxlength="2000" placeholder="e.g. Fixed spelling, enlarged logo per comments"></textarea></label>
         <label class="field"><span>Your name</span><input type="text" name="name" maxlength="80" required value="${esc(store.name)}"></label>
         <div class="error" data-err></div>
         <div class="footer"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn btn-primary">Upload v${next}</button></div>
       </form>`);
     wireSource(modal);
+    wireSize(modal);
     $("form", modal).addEventListener("submit", async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target); const btn = $('button[type=submit]', modal); const err = $("[data-err]", modal);
@@ -994,10 +1036,11 @@
       try {
         const name = String(fd.get("name")).trim();
         if (!name) throw new Error("Your name is required.");
+        const size = readSize(modal);
         const src = await resolveSource(modal, setStatus);
         setStatus("Saving…");
         store.name = name;
-        const n = await api.addVersion({ asset_id: a.id, name, notes: fd.get("notes"), ...src });
+        const n = await api.addVersion({ asset_id: a.id, name, notes: fd.get("notes"), ...size, ...src });
         closeModal(); toast(`v${n} uploaded — ready for approval`);
         await renderDetail(a.id);
       } catch (ex) { err.style.color = ""; err.textContent = errMsg(ex); btn.disabled = false; }
